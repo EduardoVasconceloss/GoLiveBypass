@@ -59,8 +59,12 @@ const AUTOMATIC = "";
 const VOICE_KEYS: "voiceRegion"[] = ["voiceRegion"];
 const STREAM_KEYS: "streamRegion"[] = ["streamRegion"];
 
+// O experimento so e reavaliado alguns ticks depois do CONNECTION_OPEN. Perguntar na hora
+// exata do evento respondia "bloqueado" mesmo em sessao que tinha sido liberada.
+const VERDICT_DELAY_MS = 1500;
+
 let original: RegionStore | undefined;
-let bypassRequested = false;
+let lastScope: string | null = null;
 
 interface RegionSelectProps {
     value: string;
@@ -143,16 +147,24 @@ const settings = definePluginSettings({
         component: StreamRegionPicker,
         default: AUTOMATIC
     },
+    sessionRouting: {
+        type: OptionType.SELECT,
+        description: "What goes through the exit. Only the gateway is what unlocks Go Live, and it keeps the rest of Discord at full speed. Adding the login also hides your real address while you authenticate, at the cost of a slower start.",
+        options: [
+            { label: "Gateway only, fastest", value: "gateway", default: true },
+            { label: "Gateway and login, hides your address while you sign in", value: "login" }
+        ]
+    },
     proxy: {
         type: OptionType.STRING,
-        description: "Proxy used only while your session is being created, like socks5://127.0.0.1:9050 for Tor. Leave empty and your session is created through a free proxy picked and tested for you, which means a stranger carries your login.",
+        description: "Exit used by the gateway, like socks5://127.0.0.1:9050 for Tor. Leave empty to reuse a tested exit or find one automatically, which means a stranger carries your gateway traffic. Your own server is the only option nobody else is reading.",
         default: "",
         isValid: (value: string) => value.trim() === "" || /^(socks5|https?):\/\/[a-z0-9.-]{1,253}:\d{1,5}$/.test(value.trim())
             || "Use socks5://host:porta, http://host:porta ou https://host:porta."
     },
     excludedCountries: {
         type: OptionType.STRING,
-        description: "Two letter country codes, comma separated, whose proxies are never used. The real exit address is checked, not the one the list claims.",
+        description: "Two letter country codes, comma separated, whose exits are never used. The real exit address is checked, not the one the list claims.",
         default: "BR"
     }
 });
@@ -208,26 +220,6 @@ function restoreRegion() {
     original = undefined;
 }
 
-async function startBypass() {
-    if (!Native || bypassRequested) return;
-    bypassRequested = true;
-    showToast("GoLiveBypass is looking for a proxy. Wait for the next toast before you log in.");
-
-    try {
-        const result = await Native.enable(settings.store.excludedCountries);
-        if (result.success) {
-            showToast(`GoLiveBypass is creating your session through ${result.proxy}.`);
-            return;
-        }
-
-        bypassRequested = false;
-        showToast(`GoLiveBypass could not start. ${result.error}`, Toasts.Type.FAILURE);
-    } catch (error) {
-        bypassRequested = false;
-        logger.error("Failed to reach the desktop process", error);
-    }
-}
-
 function videoIsBlocked() {
     const user = UserStore.getCurrentUser();
     if (user == null) return false;
@@ -242,44 +234,61 @@ function videoIsBlocked() {
     return variantId === 1 || variantId === 2;
 }
 
-async function releaseProxy() {
+// Sem refazer o gateway a sessao fica bloqueada ate o proximo reinicio: a rota continua
+// instalada, mas o socket que importa ja nasceu fora dela. Recarregar e a unica saida, e o
+// processo principal limita quantas vezes isso pode acontecer.
+async function retryBehindExit() {
     if (!Native) return;
 
-    let wasProxied = false;
-    try {
-        wasProxied = await Native.getActiveProxy() !== null;
-        // So solta o proxy quando a sessao realmente ficou liberada: soltar antes de saber
-        // disso jogaria fora a unica chance de recarregar atras dele.
-        if (wasProxied && !videoIsBlocked()) await Native.disable();
-        bypassRequested = false;
-    } catch (error) {
-        logger.error("Failed to reach the desktop process", error);
-    }
-
-    if (!videoIsBlocked()) {
-        Native?.sessionWorked();
-        showToast(wasProxied
-            ? "Go Live is unlocked on this session. Only the gateway stays on the proxy, everything else is direct now."
-            : "Go Live is unlocked on this session, no proxy was needed.", Toasts.Type.SUCCESS);
-        return;
-    }
-
-    logger.warn("O servidor continuou bloqueando video: o gateway subiu sem passar pelo proxy.");
-
-    // Nao adianta soltar o proxy aqui: sem refazer o gateway a sessao fica bloqueada ate o
-    // proximo reinicio. Recarregar com o proxy no ar e a unica saida, e o processo principal
-    // limita quantas vezes isso pode acontecer.
     try {
         const result = await Native.retryWithProxy(settings.store.excludedCountries);
         if (result.retried) {
-            showToast(`GoLiveBypass is reconnecting behind the proxy (attempt ${result.attempt}).`);
+            showToast(`GoLiveBypass is reloading behind the exit (attempt ${result.attempt}).`);
             return;
         }
 
-        showToast(`GoLiveBypass could not unlock this session (${result.reason}). Open your proxy, then restart Discord from the tray.`, Toasts.Type.FAILURE);
+        showToast(`GoLiveBypass could not unlock this session (${result.reason}). Point Exit at a server of your own, then restart Discord from the tray.`, Toasts.Type.FAILURE);
     } catch (error) {
         logger.error("Failed to reach the desktop process", error);
     }
+}
+
+async function reportSession() {
+    if (!Native) return;
+
+    let exit: string | null = null;
+    try {
+        ({ exit, scope: lastScope } = await Native.sessionOpened());
+    } catch (error) {
+        logger.error("Failed to reach the desktop process", error);
+        return;
+    }
+
+    // O corpo inteiro vai no try porque ele roda num timer, e excecao dentro de um timer nao
+    // vira rejeicao que alguem la fora possa pegar: ela escapa. Basta o Discord renomear a
+    // loja do experimento para o videoIsBlocked estourar, e ai o plugin fica mudo, sem toast
+    // e sem a nova tentativa, em vez de dizer que nao conseguiu ler o veredito.
+    setTimeout(() => {
+        try {
+            if (videoIsBlocked()) {
+                logger.warn("O servidor continuou bloqueando video nesta sessao, saida do gateway:", exit);
+                retryBehindExit();
+                return;
+            }
+
+            // Avisar so depois do veredito. Avisar no CONNECTION_OPEN marcaria como boa uma
+            // saida que abriu o tunel e mesmo assim entregou uma sessao bloqueada, e o
+            // processo principal a ofereceria de novo no proximo boot.
+            Native.sessionWorked().catch(error => logger.error("Failed to reach the desktop process", error));
+
+            showToast(exit === null
+                ? "Go Live is unlocked on this session, with no exit in the way."
+                : `Go Live is unlocked. Only the gateway stays on ${exit}, everything else is direct.`,
+            Toasts.Type.SUCCESS);
+        } catch (error) {
+            logger.error("Failed to read the video guard verdict for this session", error);
+        }
+    }, VERDICT_DELAY_MS);
 }
 
 function ask(store: object, method: string, ...args: unknown[]) {
@@ -318,15 +327,20 @@ async function buildReport() {
     lines.push(`override instalado ${original !== undefined}`);
 
     lines.push("", "== configuracao ==");
-    const { proxy, voiceRegion, streamRegion, excludedCountries } = settings.store;
-    lines.push(`proxy "${proxy}" | regiao de call "${voiceRegion}" | regiao de stream "${streamRegion}" | paises fora "${excludedCountries}"`);
+    const { proxy, sessionRouting, voiceRegion, streamRegion, excludedCountries } = settings.store;
+    lines.push(`proxy "${proxy}" | roteamento "${sessionRouting}" | regiao de call "${voiceRegion}" | regiao de stream "${streamRegion}" | paises fora "${excludedCountries}"`);
 
     lines.push("", "== processo principal ==");
     if (!Native) {
         lines.push("indisponivel, o plugin esta rodando sem a parte desktop");
     } else {
+        // O escopo e o que o CONNECTION_OPEN devolveu, e nao uma pergunta nova: sessionOpened
+        // encolhe o escopo como efeito, e um diagnostico que mexe no roteamento estragaria
+        // justamente a sessao que a pessoa esta tentando descrever.
+        lines.push(`escopo na abertura da sessao: ${lastScope ?? "a sessao nao abriu com o plugin no ar"}`);
+
         try {
-            lines.push(`proxy no ar agora: ${await Native.getActiveProxy() ?? "nenhum"}`);
+            lines.push(`saida do gateway agora: ${await Native.getActiveProxy() ?? "nenhuma"}`);
             lines.push(await Native.getLog() || "sem registros");
         } catch (error) {
             lines.push(`nao consegui falar com o processo principal: ${error instanceof Error ? error.message : String(error)}`);
@@ -380,11 +394,11 @@ export default definePlugin({
 
     flux: {
         CONNECTION_OPEN() {
-            releaseProxy();
+            reportSession();
         },
 
         LOGOUT() {
-            startBypass();
+            Native?.sessionClosed().catch(error => logger.error("Failed to reach the desktop process", error));
         }
     },
 
@@ -394,6 +408,6 @@ export default definePlugin({
 
     stop() {
         restoreRegion();
-        releaseProxy();
+        Native?.shutdown().catch(error => logger.error("Failed to reach the desktop process", error));
     }
 });
