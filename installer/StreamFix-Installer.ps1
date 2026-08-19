@@ -27,7 +27,15 @@ param(
     [switch] $Yes,
 
     # Deixa a GUI carregar so as funcoes via dot-sourcing, sem disparar o menu de terminal.
-    [switch] $NoAutoRun
+    [switch] $NoAutoRun,
+
+    # Passado por quem baixou este script (o .bat ou o StreamFix-Installer-GUI.ps1), que ja
+    # resolveu a ultima release estavel pela API do GitHub para se baixar. Reaproveitar essa
+    # mesma tag aqui, em vez de consultar a API de novo, e o que garante que o motor do
+    # instalador e os arquivos que ele baixa (Resolve-RepoRaw) vem sempre da mesma revisao --
+    # uma segunda consulta independente correria o risco de pegar uma release mais nova que
+    # saiu no meio do caminho.
+    [string] $ResolvedTag = ''
 )
 
 $ErrorActionPreference = 'Stop'
@@ -48,9 +56,10 @@ foreach ($envVar in @('USERPROFILE', 'TEMP')) {
     }
 }
 
-# Commit fixo, nao "main": evita execucao remota de codigo via um push nao revisado. Bump faz
-# parte de cortar release nova (junto com a tag installer-vN e o .exe).
-$RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/04a0d03'
+# Resolvida a ultima release estavel (nao "main"): evita execucao remota de codigo via um push
+# nao revisado, sem precisar editar isto a cada release -- Resolve-RepoRaw consulta a API do
+# GitHub e resolve uma vez por execucao, memoizando o resultado.
+$script:RepoRaw = $null
 $PluginFiles = @('streamFix/index.tsx', 'streamFix/native.ts')
 $PluginDirName = 'streamFix'
 $LegacyPluginDirName = 'goLiveBypass'
@@ -85,6 +94,27 @@ function Save-Text($path, $text) {
     [IO.File]::WriteAllText($path, $text, (New-Object System.Text.UTF8Encoding($false)))
 }
 
+function Resolve-RepoRaw {
+    if ($script:RepoRaw) { return $script:RepoRaw }
+
+    if ($ResolvedTag) {
+        $script:RepoRaw = "https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/$ResolvedTag"
+        return $script:RepoRaw
+    }
+
+    try {
+        $release = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = 'StreamFix-Installer' } `
+            -Uri 'https://api.github.com/repos/EduardoVasconceloss/StreamFix/releases/latest'
+    } catch {
+        throw 'Nao consegui descobrir a ultima release estavel do StreamFix pela API do GitHub. Verifique sua conexao e tente de novo.'
+    }
+
+    if (-not $release.tag_name) { throw 'A API do GitHub nao devolveu uma tag de release valida.' }
+
+    $script:RepoRaw = "https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/$($release.tag_name)"
+    return $script:RepoRaw
+}
+
 function Get-RepoFile($relativePath) {
     # Split-Path -Parent devolve vazio na raiz de um disco, e Join-Path com Path vazio lanca
     # excecao -- o if aninhado evita isso.
@@ -97,7 +127,7 @@ function Get-RepoFile($relativePath) {
     }
 
     try {
-        return (Invoke-WebRequest -UseBasicParsing -Uri "$RepoRaw/$relativePath").Content
+        return (Invoke-WebRequest -UseBasicParsing -Uri "$(Resolve-RepoRaw)/$relativePath").Content
     } catch {
         throw "Nao consegui baixar $relativePath. Verifique sua conexao."
     }
