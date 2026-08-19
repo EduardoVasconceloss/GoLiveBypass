@@ -490,6 +490,7 @@ function Invoke-Uninstall {
     Build-Mod $root
     Stop-Discord
     Start-Discord
+    Remove-TorDaemon
 
     Write-Host ''
     Write-Ok 'Plugin removido. Seu Equicord/Vencord continua funcionando.'
@@ -766,6 +767,28 @@ function Install-TorDaemon {
     return $true
 }
 
+# So mexe no Tor que o proprio GoLiveBypass instalou (path exato em $TorExe), nunca num
+# tor.exe de outra origem -- a pessoa pode ter Tor Browser aberto por outro motivo, e matar
+# esse por engano seria pior que deixar o nosso sobrando.
+function Remove-TorDaemon {
+    if (-not (Test-Path -LiteralPath $TorRoot)) { return }
+
+    Write-Step 'Removendo o Tor que o GoLiveBypass instalou'
+
+    try {
+        Get-Process -Name 'tor' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -and $_.Path.Equals($TorExe, [StringComparison]::OrdinalIgnoreCase) } |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+    } catch { }
+
+    $shortcutPath = Join-Path ([Environment]::GetFolderPath('Startup')) 'GoLiveBypass Tor.lnk'
+    Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
+
+    # Da um instante para o processo morto soltar o arquivo de lock antes de apagar a pasta.
+    Start-Sleep -Milliseconds 300
+    Remove-Item -LiteralPath $TorRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
+
 function Select-Proxy {
     if ($Yes) { return '' }
 
@@ -861,6 +884,8 @@ function Invoke-RestoreEverything {
     } else {
         Write-Warn 'Nao achei o fonte do mod, entao so posso parar por aqui.'
     }
+
+    Remove-TorDaemon
 
     Write-Host ''
     Write-Ok 'Tudo restaurado. Seu Discord voltou ao normal.'
