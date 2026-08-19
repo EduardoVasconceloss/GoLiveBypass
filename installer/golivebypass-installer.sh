@@ -16,11 +16,8 @@
 
 set -euo pipefail
 
-# Fixo num commit especifico, nao "main": raw.githubusercontent.com/<repo>/main serve o que
-# quer que esteja no branch a qualquer momento, entao qualquer push (conta comprometida, erro
-# de quem tem acesso) vira execucao remota de codigo no proximo instalador rodado, sem revisao
-# nenhuma no meio. Um commit especifico e enderecado pelo hash, entao o conteudo nesse caminho
-# nunca muda. Atualizar isto para o HEAD atual faz parte de cortar uma release nova.
+# Commit fixo, nao "main": evita execucao remota de codigo via um push nao revisado. Bump faz
+# parte de cortar release nova.
 REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/3fee0e5"
 PLUGIN_FILES=("goLiveBypass/index.tsx" "goLiveBypass/native.ts")
 PLUGIN_DIR_NAME="goLiveBypass"
@@ -63,10 +60,8 @@ confirm() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
-# O Corepack cria o atalho do pnpm antes de saber que versao usar. Na primeira execucao ele
-# busca essa versao no registro do npm e confere a assinatura com chaves embutidas nele; as
-# chaves do Corepack que vem no Node 22 estao velhas, entao o atalho existe e mesmo assim
-# quebra com "Cannot find matching keyid". So testar se o comando existe nao prova nada.
+# So testar se o comando existe nao prova nada: o Corepack cria o atalho antes de saber a
+# versao, e as chaves embutidas no Node 22 estao velhas ("Cannot find matching keyid").
 have_pnpm() {
     have pnpm || return 1
     local version
@@ -100,11 +95,8 @@ is_checkout() {
     [ -f "$1/package.json" ] || return 1
     [ -f "$1/src/utils/types.ts" ] || return 1
 
-    # O build roda "git rev-parse --short HEAD" para gravar o hash na versao compilada. Uma
-    # pasta que tem os arquivos certos mas nao e um clone git de verdade (ZIP baixado do
-    # GitHub, ou um "git clone" interrompido no meio) passa nos dois testes acima e so quebra
-    # mais tarde, no meio do pnpm build, com "not a git repository" sem contexto nenhum.
-    # Melhor recusar aqui, onde a mensagem aponta a pasta errada na hora certa.
+    # O build roda "git rev-parse" pra gravar o hash na versao compilada; uma pasta sem clone
+    # git de verdade (ZIP baixado, clone interrompido) so quebraria mais tarde, sem contexto.
     [ -d "$1/.git" ]
 }
 
@@ -121,9 +113,8 @@ discord_resources() {
     return 0
 }
 
-# O instalador do Equicord e o do Vencord trocam o app.asar por um stub cujo index.js so faz
-# require da pasta de build. Numa instalacao a partir do fonte esse require aponta direto para
-# <checkout>/dist/desktop, que e a forma mais confiavel de achar o checkout.
+# O stub que o Equicord/Vencord deixa no lugar do app.asar so faz require da pasta de build --
+# aponta direto pro checkout, forma mais confiavel de acha-lo.
 injected_path() {
     local resources="$1" file text
     for file in "$resources/app/index.js" "$resources/app.asar"; do

@@ -59,8 +59,8 @@ const AUTOMATIC = "";
 const VOICE_KEYS: "voiceRegion"[] = ["voiceRegion"];
 const STREAM_KEYS: "streamRegion"[] = ["streamRegion"];
 
-// O experimento so e reavaliado alguns ticks depois do CONNECTION_OPEN. Perguntar na hora
-// exata do evento respondia "bloqueado" mesmo em sessao que tinha sido liberada.
+// O experimento so e reavaliado alguns ticks apos o CONNECTION_OPEN; perguntar na hora exata
+// respondia "bloqueado" mesmo em sessao ja liberada.
 const VERDICT_DELAY_MS = 1500;
 
 let original: RegionStore | undefined;
@@ -227,16 +227,13 @@ function videoIsBlocked() {
     const assignment = ApexExperimentStore.getServerAssignment("user", user.id, VIDEO_GUARD);
     if (assignment === null || typeof assignment !== "object") return false;
 
-    // As duas variacoes do experimento desligam video; o balde de controle nao tem nenhuma
-    // delas. Ler supportsInApp aqui seria inutil: o patch do plugin deixa esse valor sempre
-    // verdadeiro, e a checagem nunca detectaria bloqueio nenhum.
+    // Ler supportsInApp aqui seria inutil: o patch do plugin deixa esse valor sempre verdadeiro.
     const { variantId } = assignment as { variantId?: unknown; };
     return variantId === 1 || variantId === 2;
 }
 
-// Sem refazer o gateway a sessao fica bloqueada ate o proximo reinicio: a rota continua
-// instalada, mas o socket que importa ja nasceu fora dela. Recarregar e a unica saida, e o
-// processo principal limita quantas vezes isso pode acontecer.
+// Sem refazer o gateway a sessao fica bloqueada ate o proximo reinicio -- o socket que importa
+// ja nasceu fora da rota. Recarregar e a unica saida (processo principal limita as tentativas).
 async function retryBehindExit() {
     if (!Native) return;
 
@@ -253,9 +250,8 @@ async function retryBehindExit() {
     }
 }
 
-// Incrementado a cada CONNECTION_OPEN. O gateway pode reconectar antes do timer de 1,5s de
-// uma chamada anterior disparar (rede oscilando), e ai o veredito antigo nao descreve mais a
-// sessao atual: age-se so na chamada mais recente, as outras se calam.
+// Incrementado a cada CONNECTION_OPEN: uma reconexao antes do timer de 1,5s anterior disparar
+// invalida o veredito antigo, entao so a chamada mais recente age.
 let sessionGeneration = 0;
 
 async function reportSession() {
@@ -271,10 +267,8 @@ async function reportSession() {
         return;
     }
 
-    // O corpo inteiro vai no try porque ele roda num timer, e excecao dentro de um timer nao
-    // vira rejeicao que alguem la fora possa pegar: ela escapa. Basta o Discord renomear a
-    // loja do experimento para o videoIsBlocked estourar, e ai o plugin fica mudo, sem toast
-    // e sem a nova tentativa, em vez de dizer que nao conseguiu ler o veredito.
+    // Try no corpo inteiro: excecao dentro de um timer escapa sem virar rejeicao pegavel --
+    // um rename na loja do experimento faria o plugin ficar mudo em vez de logar o erro.
     setTimeout(() => {
         if (generation !== sessionGeneration) return;
 
@@ -285,9 +279,8 @@ async function reportSession() {
                 return;
             }
 
-            // Avisar so depois do veredito. Avisar no CONNECTION_OPEN marcaria como boa uma
-            // saida que abriu o tunel e mesmo assim entregou uma sessao bloqueada, e o
-            // processo principal a ofereceria de novo no proximo boot.
+            // So depois do veredito: no CONNECTION_OPEN marcaria como boa uma saida que abriu
+            // o tunel mas entregou sessao bloqueada.
             Native.sessionWorked().catch(error => logger.error("Failed to reach the desktop process", error));
 
             showToast(exit === null
@@ -343,9 +336,8 @@ async function buildReport() {
     if (!Native) {
         lines.push("indisponivel, o plugin esta rodando sem a parte desktop");
     } else {
-        // O escopo e o que o CONNECTION_OPEN devolveu, e nao uma pergunta nova: sessionOpened
-        // encolhe o escopo como efeito, e um diagnostico que mexe no roteamento estragaria
-        // justamente a sessao que a pessoa esta tentando descrever.
+        // O que o CONNECTION_OPEN devolveu, nao uma pergunta nova: um diagnostico que mexe no
+        // roteamento estragaria a sessao que a pessoa esta tentando descrever.
         lines.push(`escopo na abertura da sessao: ${lastScope ?? "a sessao nao abriu com o plugin no ar"}`);
 
         try {
@@ -414,11 +406,8 @@ export default definePlugin({
     start() {
         forceRegion();
 
-        // No boot do app, o processo principal ja chama isto sozinho se o plugin estiver
-        // ligado (enable() ve o roteador de pe e nao faz nada de novo). O caso que faltava e
-        // ativar o plugin com o Discord ja aberto, ou desativar e reativar na mesma sessao:
-        // sem chamar aqui, o roteador nunca nascia, e o plugin ficava marcado como ligado com
-        // o gateway saindo direto do mesmo jeito.
+        // Cobre ativar o plugin com o Discord ja aberto: no boot o processo principal ja
+        // chama isto sozinho (enable() ve o roteador de pe e nao faz nada de novo).
         Native?.enable().catch(error => logger.error("Failed to reach the desktop process", error));
     },
 

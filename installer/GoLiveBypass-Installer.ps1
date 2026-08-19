@@ -26,27 +26,19 @@ param(
 
     [switch] $Yes,
 
-    # Para a GUI (GoLiveBypass-Installer-GUI.ps1) carregar so as funcoes deste arquivo via
-    # dot-sourcing, sem disparar o menu de terminal sozinho. A GUI redefine as funcoes de
-    # interface (Write-Step, Select-Proxy, Confirm-Action etc.) depois de carregar este
-    # arquivo, e chama Invoke-Install/Invoke-Uninstall/etc. direto -- o motor de instalacao
-    # (clonar, compilar, injetar, Tor) e o mesmo, testado, dos dois jeitos.
+    # Deixa a GUI carregar so as funcoes via dot-sourcing, sem disparar o menu de terminal.
     [switch] $NoAutoRun
 )
 
 $ErrorActionPreference = 'Stop'
 [Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12
 
-# Libera a execucao so para este processo. Em maquina com politica de dominio isso pode ser
-# recusado, e nesse caso nao ha o que fazer aqui: o proprio .bat ja abre com -ExecutionPolicy Bypass.
+# Libera a execucao so para este processo; se a politica de dominio recusar, o .bat ja abre
+# com -ExecutionPolicy Bypass.
 try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch { }
 
-# Fixo num commit especifico, nao "main": raw.githubusercontent.com/<repo>/main serve o que
-# quer que esteja no branch a qualquer momento, entao qualquer push (uma conta comprometida,
-# um erro de quem tem acesso) vira execucao remota de codigo no proximo instalador rodado, sem
-# nenhuma revisao no meio. Um commit especifico e enderecado pelo hash: o conteudo nesse
-# caminho nunca muda. Atualizar isto para o HEAD atual faz parte de cortar uma release nova
-# do instalador (junto com git tag installer-vN e a recompilacao do .exe).
+# Commit fixo, nao "main": evita execucao remota de codigo via um push nao revisado. Bump faz
+# parte de cortar release nova (junto com a tag installer-vN e o .exe).
 $RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/3fee0e5'
 $PluginFiles = @('goLiveBypass/index.tsx', 'goLiveBypass/native.ts')
 $PluginDirName = 'goLiveBypass'
@@ -82,10 +74,8 @@ function Save-Text($path, $text) {
 }
 
 function Get-RepoFile($relativePath) {
-    # Split-Path -Parent devolve string vazia quando $PSScriptRoot e a raiz de um disco
-    # (instalador salvo direto em C:\ ou na raiz de um pendrive), e Join-Path com Path vazio
-    # lanca "Nao e possivel associar o argumento ao parametro 'Path'". O if aninhado evita
-    # cair nesse caso em vez de so pular a otimizacao do arquivo local.
+    # Split-Path -Parent devolve vazio na raiz de um disco, e Join-Path com Path vazio lanca
+    # excecao -- o if aninhado evita isso.
     if ($PSScriptRoot) {
         $repoRoot = Split-Path -Parent $PSScriptRoot
         if ($repoRoot) {
@@ -101,22 +91,15 @@ function Get-RepoFile($relativePath) {
     }
 }
 
-# O PowerShell embrulha tudo que um comando externo escreve em stderr como um
-# NativeCommandError, e com $ErrorActionPreference = 'Stop' no topo deste script isso vira
-# excecao fatal na PRIMEIRA linha de stderr que a ferramenta escrever -- mesmo sendo so um
-# aviso inofensivo, como o do pnpm avisando a propria versao. Isso derrubava git clone, pnpm
-# install/build/inject e ate winget no meio do caminho, mesmo quando o comando ia terminar
-# bem. Quem de fato diz se um comando externo falhou e o $LASTEXITCODE dele, ja checado logo
-# depois de cada chamada -- entao aqui so relaxamos a checagem do PowerShell em si.
+# stderr de um comando externo vira NativeCommandError fatal com ErrorActionPreference=Stop,
+# mesmo sendo so aviso (ex: pnpm avisando a propria versao). Quem diz se falhou de verdade e o
+# $LASTEXITCODE, checado depois de cada chamada -- aqui so relaxamos a checagem do PowerShell.
 function Invoke-Native([ScriptBlock] $Command) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
     try {
-        # 2>&1 mistura stderr no mesmo stream, e o ForEach devolve o texto puro da mensagem em
-        # vez do ErrorRecord inteiro -- sem isso cada linha aparece em vermelho com "ERROR:" na
-        # frente, mesmo sendo so a saida normal do comando (o aviso de versao do pnpm, o nome
-        # de cada arquivo gerado). Pra quem nao entende o que esta vendo, uma parede de "ERROR:"
-        # antes de "Pronto" parece que algo quebrou mesmo tendo dado tudo certo.
+        # 2>&1 mistura stderr no stream; o ForEach devolve o texto puro em vez do ErrorRecord,
+        # senao toda linha aparece em vermelho como "ERROR:" mesmo sendo saida normal.
         & $Command 2>&1 | ForEach-Object {
             if ($_ -is [Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ }
         }
@@ -161,11 +144,8 @@ function Test-ModCheckout($path) {
     if (-not (Test-Path -LiteralPath (Join-Path $path 'package.json'))) { return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $path 'src\utils\types.ts'))) { return $false }
 
-    # O build roda "git rev-parse --short HEAD" para gravar o hash na versao compilada. Uma
-    # pasta que tem os arquivos certos mas nao e um clone git de verdade (ZIP baixado do
-    # GitHub, ou um "git clone" que foi interrompido no meio) passa nos dois testes acima e
-    # so quebra mais tarde, no meio do pnpm build, com "not a git repository" sem contexto
-    # nenhum. Melhor recusar aqui, onde a mensagem aponta a pasta errada na hora certa.
+    # O build roda "git rev-parse" pra gravar o hash na versao compilada; uma pasta sem clone
+    # git de verdade (ZIP baixado, clone interrompido) so quebraria mais tarde, sem contexto.
     return Test-Path -LiteralPath (Join-Path $path '.git')
 }
 
@@ -190,17 +170,15 @@ function Get-DiscordResources {
 }
 
 function Get-InjectedPath($resources) {
-    # O instalador do Equicord e o do Vencord trocam o app.asar por um stub cujo index.js so
-    # faz require da pasta de build. Numa instalacao a partir do fonte esse require aponta
-    # direto para <checkout>\dist\desktop, que e a forma mais confiavel de achar o checkout.
+    # O stub que o Equicord/Vencord deixa no lugar do app.asar so faz require da pasta de
+    # build -- aponta direto pro checkout, forma mais confiavel de acha-lo.
 
     $candidates = @()
 
     $stub = Join-Path $resources 'app.asar'
     if (Test-Path -LiteralPath $stub) {
         $item = Get-Item -LiteralPath $stub
-        # app.asar pode ser uma pasta; nesse caso .Length devolve 1 e nao o tamanho do arquivo.
-        # E a leitura precisa ser UTF-8: em ASCII um caminho com acento vira "Jo??o".
+        # app.asar pode ser pasta (.Length viraria 1, nao o tamanho real).
         if ($item -is [IO.FileInfo] -and $item.Length -lt 65536) {
             $candidates += [IO.File]::ReadAllText($stub)
         }
@@ -686,17 +664,9 @@ function Select-Target($root) {
 
 # =============================================================================== tor local
 #
-# O gateway fica fixado numa saida so, para sempre, enquanto a sessao dura (e assim que o
-# roteamento por host do plugin funciona). Uma proxy gratuita que degrade no meio do caminho
-# --- sem cair de vez, so travando --- deixa o WebSocket do gateway meio-morto: quem assiste
-# para de receber os eventos de "fulano comecou a transmitir" ate alguem dar Ctrl+R. O Tor
-# nao elimina esse risco, mas e ordens de grandeza mais estavel que uma lista de proxy publica
-# desconhecida, e o circuito de uma conexao ja aberta nao muda no meio do caminho.
-#
-# Sem bridge nem pluggable transport: eles servem para atravessar rede onde a propria rede
-# Tor esta bloqueada, que nao e o caso do Brasil hoje. O que esta bloqueado e so o Go Live do
-# Discord. Bridge seria complexidade a mais (baixar meek-client.exe, manter uma linha de
-# bridge que pode expirar) sem ganho nenhum pra esse cenario.
+# Tor em vez de proxy gratuita: mais estavel numa sessao longa (gateway fica fixo numa saida
+# so; uma proxy que degrada no meio deixa o WebSocket meio-morto). Sem bridge/pluggable
+# transport: e so o Go Live do Discord que esta bloqueado, nao a rede Tor em si no Brasil.
 
 $TorRoot = Join-Path $env:LOCALAPPDATA 'GoLiveBypass\Tor'
 $TorExe = Join-Path $TorRoot 'tor\tor.exe'
@@ -768,13 +738,8 @@ function Install-ToolDirect($tool) {
     }
 }
 
-# Faz um CONNECT SOCKS5 de verdade ate um host HTTPS e autentica o TLS, igual o measure() do
-# native.ts. Um review adversarial apontou certo que confirmar so a porta TCP aberta nao prova
-# que o Tor consegue carregar trafego: o listener sobe quase na hora, bem antes dos primeiros
-# circuitos ficarem prontos (medido: listener de pe no mesmo segundo, trafego real passando
-# uns 15-20s depois). Se o instalador declarasse "pronto" cedo demais, a pessoa que escolheu
-# Tor explicitamente sairia por uma proxy gratuita sem saber -- o plugin testa por so 2,5s
-# antes de desistir do endereco escolhido e cair para automatico.
+# CONNECT SOCKS5 real ate um host HTTPS, com autenticacao TLS -- so a porta TCP aberta nao
+# prova que o Tor ja carrega trafego (o listener sobe bem antes do circuito ficar pronto).
 function Test-SocksHttpsConnect($socksPort, $targetHost, $targetPort, $timeoutMs) {
     $client = $null
     try {
@@ -805,11 +770,8 @@ function Test-SocksHttpsConnect($socksPort, $targetHost, $targetPort, $timeoutMs
         $read = $stream.Read($reply, 0, 10)
         if ($read -lt 2 -or $reply[1] -ne 0) { return $false }
 
-        # AuthenticateAsClient(host) sem protocolo explicito deixa o SChannel do Windows
-        # negociar sozinho, e isso falhou de forma consistente ("Falha a uma chamada a SSPI")
-        # rodando de dentro do .exe compilado (ps2exe), mesmo com o mesmissimo codigo
-        # funcionando normal via powershell.exe puro -- reproduzido isolado antes de corrigir.
-        # Forcar Tls12 explicitamente no overload resolve.
+        # Protocolo TLS explicito: sem isso, o SChannel falha ("Falha a uma chamada a SSPI")
+        # rodando de dentro do .exe compilado, mesmo funcionando normal via powershell.exe puro.
         $ssl = New-Object System.Net.Security.SslStream($stream, $false)
         $ssl.AuthenticateAsClient($targetHost, $null, [System.Security.Authentication.SslProtocols]::Tls12, $false)
         return $ssl.IsAuthenticated
@@ -844,32 +806,20 @@ function Start-TorDaemon {
         if (-not $portReady) { return $false }
     }
 
-    # O circuito real pode levar uns 15-20s para ficar pronto num boot frio, e testado na
-    # pratica um orcamento de 30s as vezes nao bastou (rede mais lenta, consenso do Tor
-    # demorando para chegar). 45s da folga sem deixar quem realmente nao tem Tor disponivel
-    # esperando por muito tempo.
+    # 45s de folga: o circuito real pode levar 15-20s num boot frio, e 30s as vezes nao bastou.
     return Test-TorCircuit 45000
 }
 
-# So para a sessao atual: sem isso, o Tor so voltaria a existir na proxima vez que alguem
-# rodasse o instalador. Tarefa Agendada seria o jeito "oficial", mas Register-ScheduledTask
-# (e ate o schtasks.exe cru, testado direto) deu "Acesso negado" numa conta administradora
-# comum, sem elevar nada -- alguma politica ou software de seguranca bloqueia a criacao de
-# tarefa mesmo sem precisar de admin. Um atalho na pasta Inicializar do proprio usuario e um
-# simples arquivo, sem precisar de nenhum servico do Windows, e funciona onde a Tarefa
-# Agendada nao funcionou.
+# Atalho na pasta Inicializar em vez de Tarefa Agendada: Register-ScheduledTask (e schtasks.exe
+# cru) deram "Acesso negado" numa conta administradora comum, sem elevar nada.
 function Register-TorAutostart {
     try {
         $startup = [Environment]::GetFolderPath('Startup')
         $vbsPath = Join-Path $TorRoot 'start-hidden.vbs'
         $shortcutPath = Join-Path $startup 'GoLiveBypass Tor.lnk'
 
-        # wscript.exe nao abre janela nenhuma, e Run(...,0,...) pede janela escondida para o
-        # processo filho -- e assim que o tor.exe sobe sem nem um pisca de console no login.
-        # VBScript nao trata "\" como escape (path do Windows entra cru), so "\"\"" precisa
-        # virar "" (aspas dobradas) para sobreviver dentro de outra string. Montado com
-        # concatenacao de strings de aspas simples em vez de escapar tudo numa string so, que
-        # e ilegivel e facil de errar a contagem de aspas.
+        # wscript.exe + Run(...,0,...) sobe o tor.exe sem console nenhum no login. VBScript nao
+        # escapa "\": aspas duplas precisam virar "" pra sobreviver dentro da string.
         $runLine = 'shell.Run """' + $TorExe + '"" -f ""' + $TorRc + '""", 0, False'
         $vbsLines = @(
             'Set shell = CreateObject("WScript.Shell")'
@@ -894,10 +844,8 @@ function Register-TorAutostart {
 }
 
 function Install-TorDaemon {
-    # Nao basta a porta estar aberta: pode ser um Tor de outra origem ainda sem circuito
-    # pronto, ou o nosso proprio de uma execucao anterior travado. Start-TorDaemon confere
-    # trafego real (Test-TorCircuit) antes de devolver sucesso -- atalhar aqui so pela porta
-    # reabriria exatamente o buraco que aquela checagem existe para fechar.
+    # Nao basta a porta estar aberta: pode ser um Tor de outra origem sem circuito pronto, ou
+    # o nosso travado. Start-TorDaemon confere trafego real antes de devolver sucesso.
     if (Test-PortOpen $TorSocksPort) {
         Write-Step 'Ja tem algo escutando na porta 9050, confirmando que carrega trafego de verdade'
         if (Start-TorDaemon) {
@@ -928,11 +876,8 @@ function Install-TorDaemon {
     Write-Step "Baixando o Tor $TorVersion (uns 20 MB)"
     Invoke-WebRequest -UseBasicParsing -Uri $archiveUrl -OutFile $archivePath
 
-    # Contra $TorArchiveSha256, fixo no script e conferido a mao antes de publicar -- nao
-    # contra um hash buscado agora do mesmo dist.torproject.org que serviu o binario. Um hash
-    # "esperado" vindo da mesma origem nao prova nada: uma origem comprometida serviria os
-    # dois, binario e checksum, coerentes entre si. O hash fixo aqui e a ancora de confianca
-    # independente -- foi conferido de um lugar e num momento diferentes do download real.
+    # Contra o hash fixo no script (conferido a mao antes de publicar), nao um hash buscado
+    # agora da mesma origem que serviu o binario -- isso nao provaria nada contra origem comprometida.
     Write-Step 'Conferindo o hash do download'
     $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualHash -ne $TorArchiveSha256) {
@@ -947,9 +892,8 @@ function Install-TorDaemon {
 
     if (-not (Test-Path -LiteralPath $TorExe)) { throw 'O pacote baixado do Tor nao trouxe o tor.exe esperado.' }
 
-    # O parser do torrc trata "\" dentro de aspas como escape de string C ("\U" nao e valido),
-    # entao um DataDirectory absoluto do Windows entre aspas quebra com "Invalid escape
-    # sequence". Barra normal funciona em qualquer path no Windows e nao tem esse problema.
+    # O parser do torrc trata "\" entre aspas como escape de string C e quebra num path do
+    # Windows; barra normal funciona sem esse problema.
     $dataDir = (Join-Path $TorRoot 'data') -replace '\\', '/'
     $torrcLines = @(
         "SocksPort 127.0.0.1:$TorSocksPort"
@@ -965,9 +909,8 @@ function Install-TorDaemon {
     return $true
 }
 
-# So mexe no Tor que o proprio GoLiveBypass instalou (path exato em $TorExe), nunca num
-# tor.exe de outra origem -- a pessoa pode ter Tor Browser aberto por outro motivo, e matar
-# esse por engano seria pior que deixar o nosso sobrando.
+# So mexe no Tor que o proprio GoLiveBypass instalou (path exato), nunca num tor.exe de outra
+# origem -- a pessoa pode ter Tor Browser aberto por outro motivo.
 function Remove-TorDaemon {
     if (-not (Test-Path -LiteralPath $TorRoot)) { return }
 
@@ -1005,11 +948,8 @@ function Select-Proxy {
         '2' {
             if (-not (Install-TorDaemon)) { throw 'Nao consegui deixar o Tor pronto. Tente de novo, ou use outra opcao.' }
 
-            # Devolver vazio aqui significaria "automatico" para o plugin, que prefere uma
-            # saida ja guardada no pote antes mesmo de tentar o Tor -- ai quem escolheu Tor
-            # explicitamente podia acabar saindo por uma proxy gratuita de uma instalacao
-            # anterior, sem aviso nenhum. O endereco explicito forca o plugin a usar
-            # exatamente o Tor que acabamos de deixar de pe.
+            # Vazio significaria "automatico" pro plugin, que podia acabar saindo por outra
+            # proxy sem avisar. Endereco explicito forca o uso do Tor que acabamos de subir.
             return "socks5://127.0.0.1:$TorSocksPort"
         }
         '3' {
@@ -1116,14 +1056,8 @@ function Show-MainMenu {
 }
 
 if (-not $NoAutoRun) {
-    # Quem roda o .exe direto (sem passar pelo .bat) nunca tinha um "pressione uma tecla" no
-    # final: a janela fechava sozinha na hora que a instalacao terminava, erro ou nao, sem dar
-    # tempo de ler nada. Um amigo tomou um erro em vermelho e a janela sumiu antes de conseguir
-    # ler o que dizia. Start-Transcript grava tudo que passa pela tela num arquivo no Desktop
-    # -- assim, mesmo que a janela feche rapido demais, sobra um arquivo pra mandar pra quem
-    # for ajudar a resolver. So pausa quando NAO e -Yes: automacao (meus proprios testes
-    # incluidos) passa -Yes justamente para nao esperar tecla nenhuma, e um Read-Host
-    # incondicional aqui travaria esses casos para sempre, sem stdin nenhum para responder.
+    # Start-Transcript grava a tela num arquivo no Desktop mesmo que a janela feche rapido
+    # demais pra ler. So pausa quando NAO e -Yes -- automacao passa -Yes sem stdin pra responder.
     $logPath = $null
     try {
         $logPath = Join-Path ([Environment]::GetFolderPath('Desktop')) "GoLiveBypass-log-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"

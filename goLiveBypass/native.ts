@@ -13,10 +13,8 @@ import { connect as connectTls } from "tls";
 const FREE_PROXY_API = "https://api.proxyscrape.com/v4/free-proxy-list/get?request=display_proxies&protocol=socks5&proxy_format=protocolipport&format=json&timeout=1500";
 const DISCORD_HOST = "discord.com";
 
-// O trace da Cloudflare responde em ~200 bytes e ja diz tudo que precisamos saber de uma
-// candidata: que o tunel SOCKS abre, que o TLS fecha com certificado valido (proxy que
-// intercepta cai aqui), que veio HTTP 200, e de que pais ela sai. A validacao antiga
-// gastava duas conexoes, uma no discord.com e outra no ifconfig.co, para descobrir o mesmo.
+// O trace da Cloudflare (~200 bytes) confirma tunel SOCKS, TLS valido e pais de saida numa
+// unica conexao, em vez de duas (discord.com + ifconfig.co) como antes.
 const TRACE_HOST = "cloudflare.com";
 const TRACE_PATH = "/cdn-cgi/trace";
 
@@ -26,9 +24,8 @@ const LOGIN_HOSTS = ["discord.com", "canary.discord.com", "ptb.discord.com"];
 const MAX_LIST_BYTES = 1024 * 1024;
 const PROBE_TIMEOUT_MS = 6000;
 
-// Prazo curto para as checagens que acontecem no caminho da abertura: a saida do campo Proxy
-// e as guardadas no pote. Todas elas ou respondem rapido ou nao servem, e cada segundo gasto
-// aqui sai do orcamento que segura o gateway.
+// Prazo curto pras checagens no caminho de abertura: cada segundo aqui sai do orcamento que
+// segura o gateway.
 const WARM_PROBE_TIMEOUT_MS = 2500;
 
 const PARALLEL_PROBES = 12;
@@ -36,10 +33,8 @@ const MAX_CANDIDATES = 48;
 const MIN_UPTIME = 90;
 const MAX_LISTED_TIMEOUT = 1500;
 
-// Portas SOCKS de clientes Tor, em ordem de preferencia. A 9052 vem primeiro porque e a que
-// o instalador configura com bridge meek: ela atravessa rede censurada, que e exatamente o
-// cenario de quem precisa deste plugin. As outras sao Tor Browser, daemon e Brave, que podem
-// estar sem bridge nenhuma.
+// Portas SOCKS de Tor em ordem de preferencia; 9052 primeiro por ser a que o instalador
+// configura com bridge meek (atravessa rede censurada).
 const TOR_PORTS = [9052, 9150, 9050, 9250];
 const TOR_PORT_TIMEOUT_MS = 400;
 
@@ -49,13 +44,11 @@ const POOL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 const MAX_LOG_LINES = 200;
 const MAX_RETRIES = 2;
 
-// Quanto tempo o gateway fica segurado enquanto a saida e escolhida. Estourou, ele sai
-// direto: perde-se o Go Live daquela sessao, nunca o Discord.
+// Se estourar, o gateway sai direto: perde-se o Go Live daquela sessao, nunca o Discord.
 const STALL_BUDGET_MS = 12_000;
 
-// Orcamentos do trafego vivo, bem menores que os do teste de candidata. Uma saida agonizante
-// que demora seis segundos para falhar e pior que uma morta: ela faz o Chromium desistir do
-// roteador inteiro.
+// Menores que o teste de candidata: uma saida agonizante que demora a falhar faz o Chromium
+// desistir do roteador inteiro.
 const RELAY_TUNNEL_TIMEOUT_MS = 2500;
 const RELAY_DIRECT_TIMEOUT_MS = 8000;
 
@@ -99,8 +92,7 @@ function pluginEnabled() {
     return pluginSettings()?.enabled === true;
 }
 
-// Tres respostas diferentes, e antes elas estavam misturadas numa so: o campo esta vazio
-// (procure sozinho), o campo tem um endereco bom (use este), o campo tem lixo (nao invente
+// Tres respostas: campo vazio (procure sozinho), endereco bom (use este), lixo (nao invente
 // uma saida que a pessoa nao escolheu).
 function manualProxy(): { proxy: string; } | "auto" | "invalid" {
     const proxy = pluginSettings()?.proxy;
@@ -151,9 +143,8 @@ function readPool(): PoolEntry[] {
     });
 }
 
-// Duas instancias do Discord dividem este arquivo, entao gravar pode falhar por disputa.
-// Perder o pote custa uma busca a mais no proximo boot. Deixar a excecao subir custava o
-// processo principal.
+// Duas instancias do Discord dividem este arquivo; gravar pode falhar por disputa. Perder o
+// pote custa uma busca a mais no proximo boot -- deixar a excecao subir custava o processo.
 function writePool(entries: PoolEntry[]) {
     try {
         NativeSettings.store.plugins.GoLiveBypass ??= {};
@@ -359,15 +350,10 @@ function downloadText(url: string): Promise<string> {
     });
 }
 
-// O trace da Cloudflare prova que a saida chega na internet, mas nao que ela alcanca o
-// Discord especificamente. Uma rede que bloqueia so dominios do Discord -- o cenario que este
-// plugin existe para contornar -- passaria no Cloudflare e falharia bem na conexao que
-// importa. Sem esta segunda checagem essa saida entraria no pote como "boa", e o gateway so
-// descobriria que nao funciona na hora de tentar de verdade, gastando uma das poucas
-// tentativas do retryWithProxy. Nao exige HTTP 200: gateway.discord.gg responde 404 a um GET
-// comum (o endpoint de verdade e WebSocket, nao HTTP), mas qualquer linha de status valida ja
-// prova que a conexao chegou la, o TLS fechou com certificado bom, e nada no caminho
-// bloqueou ou interceptou.
+// O trace da Cloudflare prova que a saida chega na internet, nao que alcanca o Discord --
+// uma rede que bloqueia so dominios do Discord passaria no Cloudflare e falharia aqui. Nao
+// exige HTTP 200 (gateway.discord.gg responde 404 a um GET comum): qualquer status valido
+// ja prova que a conexao e o TLS chegaram la.
 async function reachesGateway(proxy: string, timeoutMs: number) {
     const socket = await openTunnel(proxy, GATEWAY_HOSTS[0], 443, timeoutMs);
     if (socket === null) return false;
@@ -395,9 +381,8 @@ async function measure(proxy: string, timeoutMs = PROBE_TIMEOUT_MS) {
     return { proxy, country: country[1].toUpperCase(), ip: ip?.[1] ?? "", ms: Date.now() - started };
 }
 
-// Todas as candidatas do lote andam juntas, e a primeira que responder bem ganha. Antes o
-// teste de pais rodava uma candidata por vez depois do lote inteiro terminar, o que sozinho
-// podia somar um minuto.
+// Todo o lote anda junto, a primeira que responder bem ganha -- testar candidata por candidata
+// podia somar um minuto sozinho.
 function firstUsable(candidates: string[], excluded: Set<string>, timeoutMs: number) {
     return new Promise<PoolEntry | null>(resolve => {
         let pending = candidates.length;
@@ -405,9 +390,8 @@ function firstUsable(candidates: string[], excluded: Set<string>, timeoutMs: num
 
         let settled = false;
 
-        // O prazo vai escrito na chamada de proposito. Um candidates.map(measure) parece
-        // igual e nao e: map passa (item, indice, array), entao o indice cairia em timeoutMs
-        // e a candidata numero zero teria zero milissegundo para responder.
+        // candidates.map(measure) pareceria igual mas nao e: map passa (item, indice, array),
+        // e o indice cairia em timeoutMs, dando zero ms pra candidata numero zero.
         for (const candidate of candidates) {
             measure(candidate, timeoutMs).then(result => {
                 if (!settled && result !== null && !excluded.has(result.country)) {
@@ -501,10 +485,8 @@ async function freeExit(excluded: Set<string>, want: number) {
     return found;
 }
 
-// Reabastecer o pote e uma escolha nova disparada por uma saida que morreu podem correr ao
-// mesmo tempo. Duas buscas paralelas disputam a mesma banda e dobram o tempo ate a primeira
-// saida ficar pronta, que e exatamente a janela em que o gateway conecta sem protecao. Quem
-// chegar depois espera a busca que ja esta correndo.
+// Reabastecer o pote e uma escolha nova podem correr ao mesmo tempo; duas buscas paralelas
+// dobram o tempo ate a saida ficar pronta. Quem chegar depois espera a que ja esta correndo.
 let hunting: Promise<PoolEntry[]> | null = null;
 
 function sharedFreeExit(excluded: Set<string>, want: number) {
@@ -525,10 +507,8 @@ function settleExit(value: string | null) {
     for (const resume of pending) resume(value);
 }
 
-// O gateway chega aqui antes de existir saida escolhida, e e exatamente isso que a versao
-// anterior nao conseguia fazer: como o proxy era aplicado na sessao inteira, escolher tinha
-// que acontecer antes do app subir, e o boot inteiro parava de 8 a 23 segundos. Segurando
-// so este socket, o Discord carrega na velocidade normal enquanto a busca acontece.
+// O gateway chega aqui antes de existir saida escolhida. Segurando so este socket (nao a
+// sessao inteira), o Discord carrega normal enquanto a busca acontece.
 function currentExit(): Promise<string | null> {
     if (exitSettled) return Promise.resolve(exit);
 
@@ -559,10 +539,8 @@ function dropExit(dead: string, excluded?: Set<string>) {
     chooseExit(excluded);
 }
 
-// Uma escolha por vez, e quem pedir no meio recebe a que ja esta correndo em vez de comecar
-// outra. Guardar a promessa em vez de um booleano importa: o retryWithProxy precisa esperar
-// o resultado antes de recarregar a janela, e com um booleano ele veria "ja tem alguem
-// escolhendo" e recarregaria sem saida nenhuma, queimando uma tentativa a toa.
+// Guarda a promessa, nao um booleano: retryWithProxy precisa esperar o resultado antes de
+// recarregar, senao veria "ja tem alguem escolhendo" e recarregaria sem saida nenhuma.
 let choosing: Promise<void> | null = null;
 
 function chooseExit(excluded?: Set<string>) {
@@ -570,16 +548,13 @@ function chooseExit(excluded?: Set<string>) {
     return choosing;
 }
 
-// Nada aqui pode escapar. Este plugin roda no processo principal do Discord, e no Node
-// atual uma promessa rejeitada sem tratamento derruba o processo inteiro: o Discord some
-// da tela, ou pior, sobra a janela presa na tela de conexao sem processo principal atras.
-// Aconteceu ao subir duas instancias, que disputaram o mesmo native-settings.json.
+// Nada aqui pode escapar: no processo principal do Discord, uma promessa rejeitada sem
+// tratamento derruba o processo inteiro.
 async function runChoice(excluded: Set<string>) {
     try {
         await pickExit(excluded);
     } catch {
-        // Quem ja escolheu nao perde a saida por causa de um erro que veio depois: sem esta
-        // condicao um tropeco no reabastecimento apagaria a saida que esta funcionando.
+        // Quem ja escolheu nao perde a saida por um erro vindo depois.
         if (!exitSettled) settleExit(null);
     }
 }
@@ -615,9 +590,8 @@ async function autoExit(excluded: Set<string>) {
             log(`saida guardada revalidada em ${warm.ms}ms: ${warm.proxy}`);
             settleExit(warm.proxy);
 
-            // Solta sem esperar: o pote so serve para o proximo boot, e prender a escolha
-            // ate ele encher deixaria uma saida morta no meio da sessao sem substituta,
-            // porque quem descarta a saida morta encontraria a escolha ainda ocupada.
+            // Solta sem esperar: o pote so serve pro proximo boot, prender a escolha ate
+            // encher deixaria uma saida morta sem substituta na sessao atual.
             refillPool(excluded, warm).catch(() => { });
             return;
         }
@@ -636,10 +610,8 @@ async function autoExit(excluded: Set<string>) {
     if (first !== undefined) writePool([first]);
 }
 
-// A busca cara acontece com a sessao ja aberta, para o proximo boot ter opcao pronta. E a
-// diferenca entre abrir o Discord em dois segundos e esperar meio minuto por uma lista.
-// Vale tambem quando o campo Proxy esta preenchido mas morto: a essa altura quem esta
-// carregando o gateway e uma saida encontrada, entao guardar as outras e o mesmo ganho.
+// Busca cara acontece com a sessao ja aberta, pro proximo boot ter opcao pronta -- diferenca
+// entre abrir em dois segundos e esperar meio minuto por uma lista.
 async function refillPool(excluded: Set<string>, keep: PoolEntry) {
     try {
         const found = await sharedFreeExit(excluded, POOL_SIZE);
@@ -694,32 +666,23 @@ async function serveRequest(client: Socket, request: Buffer | null) {
     const target = readTarget(request);
     if (target === null) return refuse(client);
 
-    // Sucesso respondido agora, antes de saber por onde vamos sair, e isso e deliberado. O
-    // Chromium mantem uma lista de proxies ruins: basta uma resposta lenta ou negativa para
-    // ele parar de usar este roteador e mandar tudo direto, sem avisar. Foi o que aconteceu,
-    // com o relay de pe e saudavel e nenhuma conexao passando por ele. Respondendo na hora
-    // ele nunca tem motivo para desconfiar, e uma saida que falhe vira uma conexao fechada,
-    // que e problema do destino e nao do proxy. O socket continua pausado pelo readFrame,
-    // entao nada que o cliente mandar se perde ate o pipe comecar.
+    // Sucesso respondido antes de saber a saida, de proposito: o Chromium para de usar um
+    // roteador que responda lento/negativo, sem avisar. Uma saida que falhe vira conexao
+    // fechada (problema do destino, nao do proxy) -- o socket segue pausado pelo readFrame.
     client.write(Buffer.from([5, 0, 0, 1, 0, 0, 0, 0, 0, 0]));
 
     const through = await currentExit();
     if (client.destroyed) return;
 
-    // LOGIN_HOSTS so chega aqui quando Session routing = login, exatamente para o momento
-    // mais sensivel da sessao (a autenticacao) nao sair pelo IP real. Cair para direto nesse
-    // caso especifico vazaria o IP real em silencio, o oposto do que a setting promete. Isso
-    // e diferente do gateway: la o fallback direto e proposital, porque senao uma saida ruim
-    // travaria o boot do Discord inteiro. Falhar fechado aqui so derruba a conexao de login
-    // (o Discord mostra erro e deixa tentar de novo), nunca o app.
+    // Login (autenticacao) falha fechado -- diferente do gateway, onde cair pra direto e
+    // proposital. Vazar o IP real no login seria o oposto do que a setting promete.
     const isLoginHost = LOGIN_HOSTS.includes(target.host);
 
     let upstream = through === null
         ? (isLoginHost ? null : await openDirect(target.host, target.port, RELAY_DIRECT_TIMEOUT_MS))
         : await openTunnel(through, target.host, target.port, RELAY_TUNNEL_TIMEOUT_MS);
 
-    // Saida que nao entrega e descartada na hora, senao toda conexao seguinte paga o mesmo
-    // tempo de espera antes de cair para direto.
+    // Descartada na hora, senao toda conexao seguinte paga o mesmo tempo de espera.
     if (upstream === null && through !== null) {
         dropExit(through);
         upstream = isLoginHost ? null : await openDirect(target.host, target.port, RELAY_DIRECT_TIMEOUT_MS);
@@ -743,15 +706,10 @@ async function serveRequest(client: Socket, request: Buffer | null) {
 function pacScript(socksPort: number, routed: string[]) {
     const list = routed.map(host => `"${host}"`).join(",");
 
-    // O host roteado sai pelo roteador e ponto, sem alternativa depois do ponto e virgula.
-    // Ter uma custou uma sessao inteira: uma saida gratuita falhou uma vez, o Chromium
-    // marcou o SOCKS local como ruim, e a partir dali mandou tudo pela alternativa sem
-    // avisar ninguem. PAC servido, roteador escutando, e nenhuma conexao passando por ele.
-    // A rede de seguranca real e outra: o roteador nunca recusa por causa da saida, ele
-    // mesmo cai para conexao direta. Ela vive dentro do processo, onde da para medir, e nao
-    // numa regra do Chromium que decide sozinho e nao conta.
-    // Quem nao esta na lista continua com a regra que o sistema ja usava, entao proxy
-    // corporativo ou PAC da empresa seguem valendo para o resto do Discord.
+    // O host roteado sai pelo roteador, sem alternativa: uma vez que o Chromium marca o SOCKS
+    // como ruim ele passa a usar a alternativa do PAC sem avisar. A rede de seguranca real e
+    // o proprio roteador caindo pra conexao direta, nao uma regra que o Chromium decide sozinho.
+    // Quem nao esta na lista mantem a regra que o sistema ja usava (proxy corporativo/PAC).
     return `var routed = [${list}];\n`
         + "function FindProxyForURL(url, host) {\n"
         + "    for (var i = 0; i < routed.length; i++)\n"
@@ -765,12 +723,8 @@ function routedHosts(): string[] {
     return scope === "login" ? [...GATEWAY_HOSTS, ...LOGIN_HOSTS] : [...GATEWAY_HOSTS];
 }
 
-// O PAC vai embutido na propria URL. A alternativa era servi-lo de um HTTP local, e ai o
-// Chromium precisa buscar o arquivo bem no meio da subida do app, com a rede ainda se
-// montando. Numa build de Electron mais antiga isso derrubava o processo principal em
-// silencio: o app nao abria, e nao havia excecao para pegar. Sem servidor nao ha busca.
-// Trocar o escopo troca o conteudo, e conteudo diferente ja e URL diferente, entao nao
-// precisa de numero de versao para o Chromium reler.
+// PAC embutido na propria URL, nao servido de um HTTP local: buscar o arquivo com a rede
+// ainda montando ja derrubou o processo principal em silencio numa build de Electron antiga.
 function pacDataUrl(socksPort: number) {
     const script = pacScript(socksPort, routedHosts());
     return "data:application/x-ns-proxy-autoconfig;base64," + Buffer.from(script, "utf8").toString("base64");
@@ -785,39 +739,27 @@ async function installPac(redial: boolean) {
 
         await session.defaultSession.setProxy({ mode: "pac_script", pacScript: pacDataUrl(socksPort) });
 
-        // Conferir em vez de supor. Se a regra nao pegou, e melhor sair direto de propria
-        // vontade do que ficar num meio termo em que o roteador existe e ninguem o usa,
-        // que foi como este plugin falhou em silencio antes.
-        // Confere o endereco inteiro, e nao so o numero da porta: a resposta de um PAC
-        // ignorado e a regra do sistema, e um "PROXY host:porta" dela pode conter os mesmos
-        // digitos por acaso. Ai a checagem diria que a rota pegou justamente quando nao pegou.
+        // Confere o endereco inteiro, nao so a porta: a regra do sistema (quando o PAC e
+        // ignorado) pode conter os mesmos digitos da porta por coincidencia.
         const route = await session.defaultSession.resolveProxy(`https://${GATEWAY_HOSTS[0]}`);
         if (typeof route !== "string" || !route.includes(`127.0.0.1:${socksPort}`)) {
             log("o Chromium ignorou o PAC, voltando para a regra do sistema");
 
-            // "system" e o que uma sessao intocada usa. Voltar para "direct" arrancaria o
-            // proxy do sistema de quem esta atras de PAC, VPN ou proxy corporativo.
+            // "system", nao "direct": arrancaria o proxy de quem esta atras de VPN/corporativo.
             await session.defaultSession.setProxy({ mode: "system" });
 
-            // Nada ficou roteado, e o escopo tem que dizer isso. Com ele mentindo "gateway",
-            // o retryWithProxy recarrega o cliente atras de uma rota que nao existe e queima
-            // as tentativas sem chance nenhuma de consertar a sessao.
+            // Escopo tem que refletir que nada ficou roteado, senao retryWithProxy recarrega
+            // atras de uma rota que nao existe e queima a tentativa a toa.
             scope = "off";
             return false;
         }
 
-        // Regra nova nao muda socket que ja nasceu, e o gateway costuma nascer antes daqui.
-        // Sem derrubar o que ja esta aberto o Discord fica com a rota velha a sessao inteira,
-        // que e exatamente o modo de falhar em silencio: o roteador de pe, ninguem passando
-        // por ele. So no boot, porque depois do login derrubar o gateway seria reconectar a
-        // sessao recem autenticada a toa.
+        // Regra nova nao muda socket que ja nasceu -- so no boot; derrubar apos o login
+        // reconectaria a sessao recem autenticada a toa.
         if (redial) await session.defaultSession.closeAllConnections();
     } catch {
-        // O setProxy do inicio do try pode ter pegado mesmo com uma etapa seguinte (o
-        // resolveProxy de confirmacao, ou o closeAllConnections) lancando excecao -- nesse
-        // caso o PAC fica aplicado de verdade, roteando trafego, enquanto a funcao devolve
-        // falha e quem chama acha que nada mudou. Reverter aqui tambem, e nao so no caminho
-        // onde o Chromium ignora o PAC, fecha esse buraco.
+        // O setProxy pode ter pegado mesmo com uma etapa seguinte lancando excecao -- reverter
+        // aqui tambem, senao o PAC fica roteando trafego enquanto a funcao devolve falha.
         log("nao consegui aplicar a regra de rota, revertendo para a regra do sistema");
         try { await session.defaultSession.setProxy({ mode: "system" }); } catch { }
         scope = "off";
@@ -835,9 +777,7 @@ async function startRouter(next: Scope) {
         const server = createSocksServer(serveSocks);
         server.on("error", () => { });
 
-        // A promessa resolve tambem no erro. Esperar por um listen que nunca vai acontecer
-        // deixaria o boot pendurado para sempre, e este codigo roda no caminho de abertura
-        // do Discord.
+        // Resolve tambem no erro: esperar um listen que nunca acontece penduraria o boot.
         const started = await new Promise<boolean>(resolve => {
             server.once("error", () => resolve(false));
             server.listen(0, "127.0.0.1", () => resolve(true));
@@ -854,9 +794,7 @@ async function startRouter(next: Scope) {
 
     if (await installPac(true)) return true;
 
-    // Mesmo motivo de dentro do installPac, e vale tambem quando a excecao apareceu antes de
-    // a regra chegar a mudar: no boot nao havia rota nenhuma para sobreviver, entao o unico
-    // escopo verdadeiro depois de uma falha aqui e "off".
+    // Mesmo motivo do installPac: no boot nao havia rota pra sobreviver a uma falha.
     scope = "off";
     return false;
 }
@@ -865,12 +803,11 @@ async function stopRouter() {
     scope = "off";
 
     try {
-        // "system" e o que uma sessao intocada usa. Voltar para "direct" arrancaria o proxy
-        // do sistema de quem esta atras de PAC, VPN ou proxy corporativo.
+        // "system", nao "direct": arrancaria o proxy de quem esta atras de VPN/corporativo.
         await session.defaultSession.setProxy({ mode: "system" });
         await session.defaultSession.closeAllConnections();
     } catch {
-        // nada a fazer: a sessao ja esta fechando
+        // sessao ja fechando, nada a fazer
     }
 
     socks?.close();
@@ -878,34 +815,17 @@ async function stopRouter() {
     log("roteador desligado, tudo volta a sair direto");
 }
 
-// Extraida do app.whenReady original para ser chamavel de novo: o renderer so chama enable()
-// no start() do plugin, e um plugin desativado no boot e ativado depois (ou desativado e
-// reativado na mesma sessao do Discord) nunca disparava o boot original, porque ele so corria
-// uma vez, atado ao evento de abertura do app. O roteador ficava de pe, mas ninguem nunca
-// mandava ele nascer -- plugin marcado como ligado, gateway saindo direto do mesmo jeito.
+// Extraida do app.whenReady original pra ser chamavel de novo: sem isso, um plugin ativado
+// depois do boot (nao atado ao evento de abertura do app) nunca disparava o roteador.
 export async function enable(_?: IpcMainInvokeEvent) {
     if (scope !== "off") return { success: true as const };
 
     try {
-        // A regra do sistema e lida antes de qualquer coisa, para o PAC saber para onde mandar
-        // tudo que nao e Discord. So da para embutir UMA regra fixa no PAC, e um PAC ou
-        // auto-detect de verdade pode escolher rotas diferentes por host (proxy corporativo,
-        // DLP). Resolver so DISCORD_HOST e usar essa regra para TODO o resto seria plausivel
-        // de estar errado bem ali, e duas amostras nao provam nada sozinhas -- um PAC pode
-        // coincidir em dois hosts quaisquer e ainda divergir num terceiro que nao testamos.
-        // Comparar contra tres alvos deliberadamente bem diferentes entre si (a CDN do
-        // Discord, e um site sem nenhuma relacao com Discord) reduz bastante a chance de
-        // coincidencia: se os tres baterem, a regra do sistema provavelmente e fixa (proxy
-        // unico ou DIRECT) e reaplicar ela em todo mundo e seguro. Isto continua sendo uma
-        // amostragem, nao uma prova -- nao existe API no Electron para perguntar "isto e PAC
-        // com logica por host?" diretamente -- mas e a melhor aproximacao disponivel, e se
-        // divergirem e mais honesto nao mexer em nada do que arriscar desviar trafego que o
-        // proxy corporativo tratava diferente por destino.
-        // Falha fechado: se o resolveProxy nao respondeu com uma regra confiavel -- lancou
-        // excecao, ou devolveu algo vazio/inesperado -- a versao anterior seguia em frente
-        // como se a regra fosse DIRECT. Numa maquina atras de proxy corporativo de verdade
-        // isso e o oposto do que devia acontecer: melhor nao ligar o bypass nesta sessao do
-        // que arriscar ignorar a politica da empresa por nao ter conseguido lê-la.
+        // So da pra embutir UMA regra fixa no PAC pro resto do trafego, mas um PAC/auto-detect
+        // de verdade pode variar por host (proxy corporativo, DLP). Compara 3 alvos bem
+        // diferentes: se baterem, a regra do sistema provavelmente e fixa e seguro reaplicar.
+        // Falha fechado se o resolveProxy nao responder nada confiavel -- melhor nao ligar o
+        // bypass do que arriscar ignorar a politica de proxy da empresa.
         const probeUrls = [`https://${DISCORD_HOST}`, "https://cdn.discordapp.com", "https://www.google.com"];
         let rules: (string | null)[];
         try {
@@ -930,8 +850,7 @@ export async function enable(_?: IpcMainInvokeEvent) {
 
         fallbackRule = trimmed;
 
-        // Subir o roteador leva milissegundos, entao ele esta de pe antes do gateway nascer.
-        // Escolher a saida acontece depois, em paralelo com o app carregando.
+        // Roteador sobe em milissegundos, antes do gateway nascer; a saida e escolhida depois.
         const started = await startRouter(routesLogin() ? "login" : "gateway");
         if (!started) return { success: false as const };
 
@@ -945,23 +864,16 @@ export async function enable(_?: IpcMainInvokeEvent) {
     }
 }
 
-// Sairam daqui tres protecoes da versao que aplicava proxy na sessao inteira: o prazo de
-// dois minutos que soltava o proxy sozinho, a marca de boot pendente gravada em disco para
-// nao repetir uma abertura travada, e o did-fail-load que desistia quando a pagina nao
-// carregava. As tres cobriam o mesmo acidente, saida quebrada segurando o Discord inteiro
-// sem tela e sem como pedir socorro, e esse acidente nao existe mais: so o gateway passa
-// pela saida, o resto do app nunca depende dela, e a conexao que depende cai para direta
-// sozinha dentro do roteador. Manter o prazo hoje seria dano puro, porque ele arrancaria o
-// gateway da saida no meio de uma sessao que estava funcionando.
+// As protecoes da versao que aplicava proxy na sessao inteira (prazo de 2min, marca de boot
+// pendente, did-fail-load) saem daqui: so o gateway depende da saida agora, o resto cai pra
+// direto sozinho dentro do roteador. Manter aquele prazo hoje arrancaria uma sessao funcionando.
 app.whenReady().then(async () => {
     if (pluginEnabled()) await enable();
 }).catch(() => { });
 
 export async function sessionOpened(_: IpcMainInvokeEvent) {
-    // Com a sessao aberta o login ja passou, entao o escopo encolhe para o gateway e o resto
-    // do Discord volta a sair direto. O gateway continua roteado de proposito: se ele cair e
-    // reconectar (rede oscilando, notebook suspenso), o socket novo nasce pela mesma saida e
-    // a liberacao sobrevive, coisa que a versao anterior perdia.
+    // Escopo encolhe pro gateway apos o login; ele continua roteado de proposito, entao uma
+    // reconexao (rede oscilando) nasce pela mesma saida e a liberacao sobrevive.
     if (scope === "login") await installPacWithScope("gateway");
     return { exit, scope };
 }
@@ -970,9 +882,8 @@ export async function sessionClosed(_: IpcMainInvokeEvent) {
     if (routesLogin() && scope !== "off") await installPacWithScope("login");
 }
 
-// O escopo descreve o que esta instalado, nao o que foi pedido. Se a troca falhar no meio da
-// sessao a rota antiga continua valendo, e e ela que o diagnostico e o retryWithProxy
-// precisam enxergar. Quando o proprio installPac desliga tudo, o "off" dele e que vale.
+// Escopo descreve o que esta instalado, nao o que foi pedido -- se a troca falhar, a rota
+// antiga continua valendo, e diagnostico/retryWithProxy precisam enxergar isso.
 async function installPacWithScope(next: Scope) {
     const installed = scope;
     scope = next;
@@ -1002,23 +913,17 @@ export function sessionWorked(_: IpcMainInvokeEvent) {
     retries = 0;
 }
 
-// O gateway pode nascer antes de existir saida escolhida: quando isso acontece ele sai
-// direto, o servidor continua bloqueando video, e nao ha como consertar sem refazer o
-// gateway. Recarregar com a saida ja pronta resolve, mas so pode acontecer um numero fixo de
-// vezes: sem teto isso vira a tela de carregamento infinita.
+// O gateway pode nascer antes de existir saida escolhida; recarregar com a saida ja pronta
+// resolve, mas so ate MAX_RETRIES -- sem teto isso vira tela de carregamento infinita.
 export async function retryWithProxy(event: IpcMainInvokeEvent, excludedCountries: unknown) {
     if (retries >= MAX_RETRIES) {
         log(`o servidor continuou bloqueando apos ${retries} tentativas, desistindo`);
         return { retried: false as const, reason: "tentativas esgotadas" };
     }
 
-    // Reserva a vaga antes de qualquer await. O gateway pode reconectar em rajada (rede
-    // oscilando), e cada reconexao dispara sua propria chamada a esta funcao: sem reservar
-    // aqui, duas chamadas concorrentes passam pela checagem acima com o mesmo "retries" (JS e
-    // single-threaded, mas o primeiro await abaixo cede o controle, e a segunda chamada corre
-    // nesse intervalo), e as duas terminam recarregando a janela, furando o teto de
-    // MAX_RETRIES. Se a tentativa acabar não indo adiante (sem saida, roteador desligado,
-    // janela sumiu), a vaga volta: nao e falha do servidor, entao nao deve contar.
+    // Reserva a vaga antes de qualquer await: reconexoes em rajada disparam chamadas
+    // concorrentes que veriam o mesmo "retries" no intervalo entre awaits, furando o teto.
+    // Devolve a vaga se a tentativa nao for adiante -- nao e falha do servidor.
     retries++;
     const attempt = retries;
 
@@ -1028,33 +933,22 @@ export async function retryWithProxy(event: IpcMainInvokeEvent, excludedCountrie
         return { retried: false as const, reason: "roteador desligado" };
     }
 
-    // A lista chega do renderer porque e a que a pessoa esta vendo nas settings agora; a copia
-    // lida no processo principal so muda depois que o renderer grava. Vazia quer dizer que nao
-    // veio nada util, e ai vale o que esta gravado.
+    // Vem do renderer, nao do processo principal: e a copia que a pessoa esta vendo agora.
     const requested = requestedCountries(excludedCountries);
     const excluded = requested.size > 0 ? requested : undefined;
 
-    // Se a saida que esta no ar ainda responde, a causa foi a corrida: o gateway nasceu antes
-    // dela e o roteador o mandou direto. Recarregar faz o gateway renascer ja pela saida, e
-    // isso conserta a sessao. A rota nao precisa ser reinstalada, ela nunca saiu do lugar.
+    // Se a saida no ar ainda responde, foi corrida: o gateway nasceu antes dela e saiu direto.
+    // Recarregar conserta sem reinstalar a rota.
     let through = exit;
     if (through !== null && await measure(through, PROBE_TIMEOUT_MS) === null) {
         log(`${through} parou de responder no meio da sessao`);
-
-        // A lista vai junto porque quem descarta ja comeca a procurar a substituta. Sem ela,
-        // a busca que o await abaixo aproveita seria a que ignora o pais que a pessoa acabou
-        // de excluir, e a tentativa seguinte nasceria no pais errado.
         dropExit(through, excluded);
 
-        // Le de volta em vez de assumir null: se o trafego vivo ja tinha descartado esta saida
-        // e achado outra, ela serve, e comecar uma busca nova por cima jogaria fora a que esta
-        // funcionando neste instante.
+        // Le de volta em vez de assumir null: o trafego vivo pode ja ter achado outra saida.
         through = exit;
     }
 
-    // Sem saida no ar, recarregar cairia direto de novo e repetiria a mesma falha. Aqui nao ha
-    // corrida com o gateway para ganhar, entao vale esperar a busca inteira em vez dos prazos
-    // curtos do boot.
+    // Sem saida no ar nao ha corrida a ganhar com o gateway -- vale esperar a busca inteira.
     if (through === null) {
         await chooseExit(excluded);
         through = exit;
@@ -1073,8 +967,8 @@ export async function retryWithProxy(event: IpcMainInvokeEvent, excludedCountrie
 
     log(`o servidor bloqueou esta sessao, recarregando atras de ${through} (tentativa ${attempt} de ${MAX_RETRIES})`);
 
-    // event.sender e a janela que roda o plugin. Guardar a primeira janela criada nao servia:
-    // a primeira do Discord e a tela de abertura, e recarregar ela nao recarrega o cliente.
+    // event.sender e a janela do plugin -- a primeira janela criada e a tela de abertura, e
+    // recarregar ela nao recarrega o cliente.
     event.sender.reload();
     return { retried: true as const, attempt };
 }

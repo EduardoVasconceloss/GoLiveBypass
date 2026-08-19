@@ -21,11 +21,8 @@ try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Mesmo commit fixo que installer/GoLiveBypass-Installer.ps1 usa, pelo mesmo motivo (ver o
-# comentario de $RepoRaw la): raw.githubusercontent.com/<repo>/main serve o que estiver no
-# branch a qualquer momento, e um commit especifico e imutavel. Atualizar isto para o HEAD
-# atual faz parte de cortar uma release nova do instalador, junto com o pin do .ps1/.bat e a
-# recompilacao dos dois .exe.
+# Mesmo commit fixo que installer/GoLiveBypass-Installer.ps1 usa (ver o comentario de $RepoRaw
+# la). Bump faz parte de cortar release nova, junto com o pin do .ps1/.bat e os dois .exe.
 $CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/ad8d604'
 $CoreUrl = "$CoreRepoRaw/installer/GoLiveBypass-Installer.ps1"
 
@@ -46,10 +43,7 @@ $coreContent = Resolve-CoreScript
 $coreTempPath = Join-Path $env:TEMP 'GoLiveBypass-Installer-Core.ps1'
 [IO.File]::WriteAllText($coreTempPath, $coreContent, (New-Object Text.UTF8Encoding($false)))
 
-# Carrega as funcoes de deteccao (nao as de instalacao) na thread da UI, so para achar um
-# checkout existente antes de desenhar a tela -- e rapido, nao mexe em nada. As funcoes de
-# Write-* do core viram no-op aqui: elas escrevem com Write-Host, e nesta janela (compilada
-# com -noConsole) nao ha console nenhum ouvindo.
+# Write-* viram no-op: nesta janela (-noConsole) nao ha console ouvindo Write-Host.
 . $coreTempPath -NoAutoRun
 function Write-Step($text) { }
 function Write-Ok($text) { }
@@ -310,13 +304,9 @@ $closeButton.Add_Click({ $form.Close() })
 
 # =============================================================================== log
 
-# Chamada so pelo Tick do Timer (thread da UI, sempre) -- por isso nao precisa de
-# Invoke/marshaling nenhum. Controles do WinForms so podem ser tocados pela propria thread
-# que os criou; a alternativa seria reagir ao evento DataAdded da colecao de saida, que
-# dispara na thread da runspace de fundo, exigindo Invoke em toda chamada e arriscando dois
-# pipelines rodando ao mesmo tempo na mesma runspace, o que o PowerShell nao suporta e pode
-# corromper a resolucao de cmdlets (reproduzido isolado: Start-Sleep parou de ser reconhecido
-# no meio do script depois de uma chamada assim).
+# Chamada so pelo Tick do Timer (thread da UI): controles do WinForms so podem ser tocados
+# pela propria thread que os criou. Reagir ao evento DataAdded da colecao (thread da runspace
+# de fundo) arriscaria dois pipelines na mesma runspace, que o PowerShell nao suporta.
 function Append-Log([string] $text, [System.Drawing.Color] $color) {
     $logBox.SelectionStart = $logBox.TextLength
     $logBox.SelectionLength = 0
@@ -350,12 +340,9 @@ $ColorHost = [System.Drawing.Color]::Gainsboro
 
 # =============================================================================== instalar
 
-# Roda numa runspace separada para nao travar a janela durante o pnpm build, que pode levar
-# minutos. As funcoes de interface do core (Write-Step, Select-Proxy etc.) sao redefinidas
-# aqui dentro, depois de carregar o core com -NoAutoRun, para escrever "PREFIXO|texto" na
-# saida do pipeline em vez de mexer na janela direto -- so a thread da UI pode tocar em
-# controles do WinForms, e quem le essa saida e Append-OutputLine, chamada do Tick do Timer
-# (thread da UI) em vez de reagir a um evento da propria runspace de fundo.
+# Roda numa runspace separada pra nao travar a janela durante o pnpm build. As funcoes de
+# interface do core sao redefinidas aqui pra escrever "PREFIXO|texto" na saida em vez de
+# mexer na janela direto -- so a thread da UI pode tocar em controles do WinForms.
 $workerTemplate = @'
 param(
     [string] $CorePath,
@@ -461,10 +448,8 @@ function Start-Install {
 
     $output = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
 
-    # BeginInvoke($null, $output) nao resolve a sobrecarga certa -- PowerShell.BeginInvoke tem
-    # varias sobrecargas que aceitam uma colecao de entrada como primeiro parametro, e $null
-    # sozinho nao da pra saber qual delas usar. O worker nunca le nada da entrada, entao uma
-    # colecao vazia, tipada explicitamente, resolve sem ambiguidade.
+    # BeginInvoke($null, $output) nao resolve a sobrecarga certa entre as varias que aceitam
+    # colecao de entrada; uma vazia e tipada resolve sem ambiguidade.
     $emptyInput = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
     $state.Runspace = $runspace
     $state.Pipeline = $ps
@@ -473,10 +458,8 @@ function Start-Install {
     $state.InfoLastIndex = 0
     $state.AsyncResult = $ps.BeginInvoke($emptyInput, $output)
 
-    # O Tick do Timer roda na thread da UI, entao "puxar" o que ha de novo em $output e em
-    # Streams.Information aqui dentro e seguro sem Invoke nenhum -- ao contrario de reagir ao
-    # evento DataAdded da colecao, que dispara na thread da runspace de fundo (ver o comentario
-    # de Append-Log).
+    # Tick do Timer roda na thread da UI, entao puxar $output/Streams.Information aqui e
+    # seguro sem Invoke (ver o comentario de Append-Log).
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 200
     $timer.Add_Tick({
