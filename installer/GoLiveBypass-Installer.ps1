@@ -69,9 +69,16 @@ function Save-Text($path, $text) {
 }
 
 function Get-RepoFile($relativePath) {
+    # Split-Path -Parent devolve string vazia quando $PSScriptRoot e a raiz de um disco
+    # (instalador salvo direto em C:\ ou na raiz de um pendrive), e Join-Path com Path vazio
+    # lanca "Nao e possivel associar o argumento ao parametro 'Path'". O if aninhado evita
+    # cair nesse caso em vez de so pular a otimizacao do arquivo local.
     if ($PSScriptRoot) {
-        $local = Join-Path (Split-Path -Parent $PSScriptRoot) ($relativePath -replace '/', '\')
-        if (Test-Path -LiteralPath $local) { return [IO.File]::ReadAllText($local) }
+        $repoRoot = Split-Path -Parent $PSScriptRoot
+        if ($repoRoot) {
+            $local = Join-Path $repoRoot ($relativePath -replace '/', '\')
+            if (Test-Path -LiteralPath $local) { return [IO.File]::ReadAllText($local) }
+        }
     }
 
     try {
@@ -109,7 +116,14 @@ function Update-PathFromEnvironment {
 function Test-ModCheckout($path) {
     if (-not $path) { return $false }
     if (-not (Test-Path -LiteralPath (Join-Path $path 'package.json'))) { return $false }
-    return Test-Path -LiteralPath (Join-Path $path 'src\utils\types.ts')
+    if (-not (Test-Path -LiteralPath (Join-Path $path 'src\utils\types.ts'))) { return $false }
+
+    # O build roda "git rev-parse --short HEAD" para gravar o hash na versao compilada. Uma
+    # pasta que tem os arquivos certos mas nao e um clone git de verdade (ZIP baixado do
+    # GitHub, ou um "git clone" que foi interrompido no meio) passa nos dois testes acima e
+    # so quebra mais tarde, no meio do pnpm build, com "not a git repository" sem contexto
+    # nenhum. Melhor recusar aqui, onde a mensagem aponta a pasta errada na hora certa.
+    return Test-Path -LiteralPath (Join-Path $path '.git')
 }
 
 function Get-DiscordResources {

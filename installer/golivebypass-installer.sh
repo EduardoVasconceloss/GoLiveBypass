@@ -93,7 +93,14 @@ done
 is_checkout() {
     [ -n "${1:-}" ] || return 1
     [ -f "$1/package.json" ] || return 1
-    [ -f "$1/src/utils/types.ts" ]
+    [ -f "$1/src/utils/types.ts" ] || return 1
+
+    # O build roda "git rev-parse --short HEAD" para gravar o hash na versao compilada. Uma
+    # pasta que tem os arquivos certos mas nao e um clone git de verdade (ZIP baixado do
+    # GitHub, ou um "git clone" interrompido no meio) passa nos dois testes acima e so quebra
+    # mais tarde, no meio do pnpm build, com "not a git repository" sem contexto nenhum.
+    # Melhor recusar aqui, onde a mensagem aponta a pasta errada na hora certa.
+    [ -d "$1/.git" ]
 }
 
 discord_resources() {
