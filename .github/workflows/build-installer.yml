@@ -1,0 +1,88 @@
+name: Build installer .exe
+
+# Builds the two .exe installers from the .ps1 sources in this exact repo/commit, on GitHub's
+# own runner -- not on someone's local machine. This is the reproducible-build prerequisite
+# for a project-level code-signing program (e.g. SignPath Foundation, https://signpath.org):
+# they sign builds their own infrastructure can verify came from the public source, not an
+# ad-hoc local compile. Once signing is wired up, add that step where marked below.
+
+on:
+  push:
+    tags:
+      - "installer-v*"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing release tag to attach the built .exe to (optional; skips upload if empty)"
+        required: false
+        default: ""
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install ps2exe
+        shell: pwsh
+        run: Install-Module -Name ps2exe -Force -Scope CurrentUser
+
+      - name: Compile GoLiveBypass-Installer.exe (terminal)
+        shell: pwsh
+        run: |
+          Invoke-ps2exe `
+            -inputFile "installer/GoLiveBypass-Installer.ps1" `
+            -outputFile "installer/GoLiveBypass-Installer.exe" `
+            -title "GoLiveBypass Installer" `
+            -description "Instala o GoLiveBypass no Equicord ou Vencord (terminal)" `
+            -product "GoLiveBypass" `
+            -version "1.0.0.0"
+
+      - name: Compile GoLiveBypass-Installer-GUI.exe
+        shell: pwsh
+        run: |
+          Invoke-ps2exe `
+            -inputFile "installer/GoLiveBypass-Installer-GUI.ps1" `
+            -outputFile "installer/GoLiveBypass-Installer-GUI.exe" `
+            -noConsole `
+            -title "GoLiveBypass Installer (GUI)" `
+            -description "Instala o GoLiveBypass no Equicord ou Vencord, com janela" `
+            -product "GoLiveBypass" `
+            -version "1.0.0.0"
+
+      # TODO (apos aprovacao no SignPath Foundation ou programa equivalente): assinar os dois
+      # .exe aqui, antes de calcular o hash e subir como artifact/release asset.
+
+      - name: Hash the built exes
+        shell: pwsh
+        run: |
+          $files = "installer/GoLiveBypass-Installer.exe", "installer/GoLiveBypass-Installer-GUI.exe"
+          $files | ForEach-Object {
+            "$((Get-FileHash $_ -Algorithm SHA256).Hash)  $(Split-Path -Leaf $_)"
+          } | Set-Content "installer/SHA256SUMS.txt"
+          Get-Content "installer/SHA256SUMS.txt"
+
+      - name: Upload build artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: golivebypass-installer-exe
+          path: |
+            installer/GoLiveBypass-Installer.exe
+            installer/GoLiveBypass-Installer-GUI.exe
+            installer/SHA256SUMS.txt
+
+      - name: Attach to release
+        if: startsWith(github.ref, 'refs/tags/installer-v') || inputs.tag != ''
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          tag="${{ inputs.tag }}"
+          if [ -z "$tag" ]; then tag="${GITHUB_REF#refs/tags/}"; fi
+          gh release upload "$tag" \
+            installer/GoLiveBypass-Installer.exe \
+            installer/GoLiveBypass-Installer-GUI.exe \
+            --clobber
