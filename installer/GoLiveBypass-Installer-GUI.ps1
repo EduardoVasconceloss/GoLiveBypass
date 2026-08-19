@@ -370,6 +370,15 @@ param(
 $ErrorActionPreference = 'Stop'
 . $CorePath -NoAutoRun
 
+# Usa Write-Information, NUNCA Write-Output, para mandar as linhas de log para fora da
+# runspace: Write-Output entra no mesmo stream que carrega o valor de retorno de QUALQUER
+# funcao no meio do caminho (Install-Mod, Copy-Plugin etc.), entao uma chamada de log no meio
+# de uma funcao que faz "return" no final comia o retorno de verdade e o trocava por um array
+# com as proprias linhas de log misturadas. Isso ja quebrou de forma bem concreta: $root virava
+# esse array, Join-Path processava cada item como um "Path" separado, e uma das linhas de log
+# (que termina em ":") virava uma tentativa de acessar uma unidade chamada por aquele texto
+# inteiro -- "Nao e possivel localizar a unidade... 'HOST|  Vou fazer'". Write-Information usa
+# um stream separado (Streams.Information), que nao interfere no valor de retorno de nada.
 function Write-Host {
     param(
         [Parameter(Position = 0, ValueFromPipeline = $true)] $Object = '',
@@ -378,12 +387,12 @@ function Write-Host {
         $ForegroundColor,
         $BackgroundColor
     )
-    process { Write-Output "HOST|$Object" }
+    process { Write-Information "HOST|$Object" }
 }
-function Write-Step($text) { Write-Output "STEP|$text" }
-function Write-Ok($text) { Write-Output "OK|$text" }
-function Write-Warn($text) { Write-Output "WARN|$text" }
-function Write-Err($text) { Write-Output "ERR|$text" }
+function Write-Step($text) { Write-Information "STEP|$text" }
+function Write-Ok($text) { Write-Information "OK|$text" }
+function Write-Warn($text) { Write-Information "WARN|$text" }
+function Write-Err($text) { Write-Information "ERR|$text" }
 
 function Confirm-Action($question) {
     $result = [System.Windows.Forms.MessageBox]::Show($question, 'GoLiveBypass', [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
@@ -418,6 +427,7 @@ $state = [pscustomobject]@{
     Output = $null
     Timer = $null
     LastIndex = 0
+    InfoLastIndex = 0
 }
 
 function Start-Install {
@@ -466,17 +476,27 @@ function Start-Install {
     $state.Pipeline = $ps
     $state.Output = $output
     $state.LastIndex = 0
+    $state.InfoLastIndex = 0
     $state.AsyncResult = $ps.BeginInvoke($emptyInput, $output)
 
-    # O Tick do Timer roda na thread da UI, entao "puxar" o que ha de novo em $output aqui
-    # dentro e seguro sem Invoke nenhum -- ao contrario de reagir ao evento DataAdded da
-    # colecao, que dispara na thread da runspace de fundo (ver o comentario de Append-Log).
+    # O Tick do Timer roda na thread da UI, entao "puxar" o que ha de novo em $output e em
+    # Streams.Information aqui dentro e seguro sem Invoke nenhum -- ao contrario de reagir ao
+    # evento DataAdded da colecao, que dispara na thread da runspace de fundo (ver o comentario
+    # de Append-Log). $output so deveria receber o valor de retorno de verdade do worker (o
+    # script inteiro nao devolve nada de proposito); as linhas de log de fato chegam pelo
+    # Streams.Information, que Write-Host/Write-Step/etc. usam (ver o comentario deles).
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 200
     $timer.Add_Tick({
         while ($state.LastIndex -lt $state.Output.Count) {
             Append-OutputLine $state.Output[$state.LastIndex]
             $state.LastIndex++
+        }
+
+        $infoStream = $state.Pipeline.Streams.Information
+        while ($state.InfoLastIndex -lt $infoStream.Count) {
+            Append-OutputLine $infoStream[$state.InfoLastIndex].MessageData
+            $state.InfoLastIndex++
         }
 
         if (-not $state.AsyncResult.IsCompleted) { return }
