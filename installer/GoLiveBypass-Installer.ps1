@@ -34,7 +34,13 @@ $ErrorActionPreference = 'Stop'
 # recusado, e nesse caso nao ha o que fazer aqui: o proprio .bat ja abre com -ExecutionPolicy Bypass.
 try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch { }
 
-$RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main'
+# Fixo num commit especifico, nao "main": raw.githubusercontent.com/<repo>/main serve o que
+# quer que esteja no branch a qualquer momento, entao qualquer push (uma conta comprometida,
+# um erro de quem tem acesso) vira execucao remota de codigo no proximo instalador rodado, sem
+# nenhuma revisao no meio. Um commit especifico e enderecado pelo hash: o conteudo nesse
+# caminho nunca muda. Atualizar isto para o HEAD atual faz parte de cortar uma release nova
+# do instalador (junto com git tag installer-vN e a recompilacao do .exe).
+$RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/4fb934d'
 $PluginFiles = @('goLiveBypass/index.tsx', 'goLiveBypass/native.ts')
 $PluginDirName = 'goLiveBypass'
 $DiscordNames = @('Discord', 'DiscordCanary', 'DiscordPTB')

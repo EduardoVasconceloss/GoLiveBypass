@@ -9,7 +9,12 @@ rem espaco e com acento no nome de usuario.
 
 set "GLB_SCRIPT=%~dp0GoLiveBypass-Installer.ps1"
 set "GLB_TMP=%~dp0GoLiveBypass-Installer.ps1.tmp"
-set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/GoLiveBypass-Installer.ps1"
+rem Fixo num commit especifico, nao "main": a URL de /main serve o que quer que esteja no
+rem branch a qualquer momento, entao qualquer push (conta comprometida, erro de quem tem
+rem acesso) vira execucao remota de codigo no proximo instalador rodado, sem revisao nenhuma
+rem no meio. Um commit especifico e enderecado pelo hash, entao o conteudo nesse caminho nunca
+rem muda. Atualizar isto para o HEAD atual faz parte de cortar uma release nova do instalador.
+set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/4fb934d/installer/GoLiveBypass-Installer.ps1"
 
 rem Baixa sempre para um arquivo temporario, nunca por cima do que ja existe: uma correcao de
 rem bug publicada no fork so vale de algo se quem ja tentou instalar antes (e tem um .ps1
