@@ -35,18 +35,24 @@ const MAX_LISTED_TIMEOUT = 1500;
 
 // O Vencord indexa settings pelo campo "name:" do plugin -- trocar esse campo sozinho comeca
 // do zero pra quem ja tinha o plugin instalado sob o nome antigo, perdendo proxy escolhido,
-// paises excluidos e o pote de saidas guardadas. Copia uma vez, no carregamento do modulo (o
-// mais cedo possivel, antes do renderer ler as proprias settings) e de novo no inicio de
-// enable() como reforco. So copia se o destino ainda nao existe -- nunca sobrescreve.
+// paises excluidos e o pote de saidas guardadas. Move (nao copia) uma vez, no carregamento do
+// modulo (o mais cedo possivel, antes do renderer ler as proprias settings) e de novo no
+// inicio de enable() como reforco. So move se o destino ainda nao existe -- nunca sobrescreve.
+// Apagar a origem depois de copiar e essencial, nao cosmetico: achado num review adversarial
+// que apagar mesmo apos copiar previne um plugin antigo (rollback) reativando em silencio um
+// proxy/roteamento que a pessoa ja tinha desligado no StreamFix -- duas copias vivas da mesma
+// configuracao, uma delas nunca mais atualizada, e exatamente esse buraco.
 function migrateLegacySettings() {
     const rendererPlugins = (RendererSettings.store.plugins ??= {});
     if (rendererPlugins.GoLiveBypass && !rendererPlugins.StreamFix) {
         rendererPlugins.StreamFix = { ...rendererPlugins.GoLiveBypass };
+        delete rendererPlugins.GoLiveBypass;
     }
 
     const nativePlugins = (NativeSettings.store.plugins ??= {});
     if (nativePlugins.GoLiveBypass && !nativePlugins.StreamFix) {
         nativePlugins.StreamFix = { ...nativePlugins.GoLiveBypass };
+        delete nativePlugins.GoLiveBypass;
     }
 }
 migrateLegacySettings();
