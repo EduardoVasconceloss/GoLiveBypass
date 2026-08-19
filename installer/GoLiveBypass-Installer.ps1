@@ -712,8 +712,13 @@ function Test-SocksHttpsConnect($socksPort, $targetHost, $targetPort, $timeoutMs
         $read = $stream.Read($reply, 0, 10)
         if ($read -lt 2 -or $reply[1] -ne 0) { return $false }
 
+        # AuthenticateAsClient(host) sem protocolo explicito deixa o SChannel do Windows
+        # negociar sozinho, e isso falhou de forma consistente ("Falha a uma chamada a SSPI")
+        # rodando de dentro do .exe compilado (ps2exe), mesmo com o mesmissimo codigo
+        # funcionando normal via powershell.exe puro -- reproduzido isolado antes de corrigir.
+        # Forcar Tls12 explicitamente no overload resolve.
         $ssl = New-Object System.Net.Security.SslStream($stream, $false)
-        $ssl.AuthenticateAsClient($targetHost)
+        $ssl.AuthenticateAsClient($targetHost, $null, [System.Security.Authentication.SslProtocols]::Tls12, $false)
         return $ssl.IsAuthenticated
     } catch {
         return $false
