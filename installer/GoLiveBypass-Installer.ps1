@@ -116,15 +116,31 @@ function Test-Tool($name) {
 # busca essa versao no registro do npm e confere a assinatura com chaves embutidas nele; as
 # chaves do corepack que vem no Node 22 estao velhas, entao o atalho existe e mesmo assim
 # quebra com "Cannot find matching keyid". So testar se o comando existe nao prova nada.
-function Test-Pnpm {
+function Test-Pnpm($expectedVersion = $null) {
     if (-not (Test-Tool 'pnpm')) { return $false }
 
     # 2>$null para o erro do corepack nao assustar quem so vai ver a instalacao seguir.
     $version = & pnpm --version 2>$null
     if ($LASTEXITCODE -ne 0) { return $false }
 
+    # Versao errada tambem conta como "nao esta pronto": pnpm avisa a cada comando quando
+    # difere da que o package.json pede, mesmo funcionando -- reinstalar a certa cala o aviso.
+    if ($expectedVersion -and $version -ne $expectedVersion) { return $false }
+
     Write-Step "pnpm encontrado: $version"
     return $true
+}
+
+function Get-PinnedPnpmVersion($root) {
+    if (-not $root) { return $null }
+    $manifest = Join-Path $root 'package.json'
+    if (-not (Test-Path -LiteralPath $manifest)) { return $null }
+
+    try {
+        $pm = (Get-Content -LiteralPath $manifest -Raw | ConvertFrom-Json).packageManager
+        if ($pm -match '^pnpm@([\d.]+)') { return $Matches[1] }
+    } catch { }
+    return $null
 }
 
 function Update-PathFromEnvironment {
@@ -314,7 +330,7 @@ function Show-ModChoice {
     }
 }
 
-function Install-Toolchain($needGit) {
+function Install-Toolchain($needGit, $root = $null) {
     # Relê o PATH antes do primeiro Test-Tool: quem instala o Node e abre o instalador sem
     # reiniciar o terminal (ou clica no .exe pelo Explorer) herda um PATH de antes do registro
     # atualizar, e a ferramenta parece "faltando" mesmo estando la.
@@ -369,18 +385,20 @@ function Install-Toolchain($needGit) {
         Write-Ok 'Instalado. Seguindo sem precisar reabrir o terminal.'
     }
 
-    if (Test-Pnpm) { return }
+    $pinnedPnpm = Get-PinnedPnpmVersion $root
+    if (Test-Pnpm $pinnedPnpm) { return }
 
     # O Corepack cria um atalho do pnpm antes de saber que versao usar, e na primeira
     # execucao ele confere a assinatura contra chaves embutidas que no Node 22 estao
     # vencidas: o atalho existe e mesmo assim quebra com "Cannot find matching keyid".
     # O npm instala o pnpm direto, sem essa etapa, entao vamos direto por ele.
-    Write-Step 'Instalando o pnpm pelo npm'
-    Invoke-Native { npm install -g pnpm }
+    $pnpmSpec = if ($pinnedPnpm) { "pnpm@$pinnedPnpm" } else { 'pnpm' }
+    Write-Step "Instalando o $pnpmSpec pelo npm"
+    Invoke-Native { npm install -g $pnpmSpec }
     Update-PathFromEnvironment
 
-    if (-not (Test-Pnpm)) {
-        throw 'Nao consegui deixar o pnpm funcionando. Abra um terminal e rode: npm install -g pnpm'
+    if (-not (Test-Pnpm $pinnedPnpm)) {
+        throw "Nao consegui deixar o pnpm funcionando. Abra um terminal e rode: npm install -g $pnpmSpec"
     }
 }
 
@@ -465,7 +483,10 @@ function Invoke-Injection($root) {
     try {
         Stop-Discord
         Write-Step 'Injetando no Discord'
-        Invoke-Native { pnpm inject }
+        # --branch auto: sem isso, o instalador do mod pergunta com um menu de setinhas qual
+        # Discord usar mesmo com --install ja passado -- na GUI (sem console de verdade) essa
+        # pergunta trava para sempre, sem jeito de responder. auto pega Stable > Canary > PTB.
+        Invoke-Native { pnpm inject -- --branch auto }
         if ($LASTEXITCODE -ne 0) { throw 'pnpm inject falhou' }
     } finally {
         Pop-Location
@@ -487,7 +508,7 @@ function Invoke-Install($root) {
     $proxy = Select-Proxy
     $permanent = Select-Persistence
 
-    Install-Toolchain $false
+    Install-Toolchain $false $root
     Copy-Plugin $root
     Build-Mod $root
 
@@ -1003,7 +1024,7 @@ function Wait-DiscordExit($root) {
         # finally para que Ctrl+C tambem desfaca, em vez de deixar o Discord injetado.
         Push-Location -LiteralPath $root
         try {
-            Invoke-Native { pnpm uninject }
+            Invoke-Native { pnpm uninject -- --branch auto }
             if ($LASTEXITCODE -ne 0) { Write-Warn 'O pnpm uninject falhou. Rode "pnpm uninject" na pasta do mod.' }
             else { Write-Ok 'Discord restaurado.' }
         } finally { Pop-Location }
@@ -1023,7 +1044,7 @@ function Invoke-RestoreEverything {
         Push-Location -LiteralPath $root
         try {
             Write-Step 'Desfazendo a injecao'
-            Invoke-Native { pnpm uninject }
+            Invoke-Native { pnpm uninject -- --branch auto }
         } finally { Pop-Location }
     } else {
         Write-Warn 'Nao achei o fonte do mod, entao so posso parar por aqui.'
