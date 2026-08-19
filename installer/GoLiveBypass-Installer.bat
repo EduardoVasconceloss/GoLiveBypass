@@ -30,11 +30,25 @@ echo   Baixando a versao mais recente do instalador...
 del /f /q "%GLB_TMP%" >nul 2>&1
 powershell -NoProfile -ExecutionPolicy Bypass -Command "[Net.ServicePointManager]::SecurityProtocol = [Net.SecurityProtocolType]::Tls12; Invoke-WebRequest -UseBasicParsing -Uri $env:GLB_URL -OutFile $env:GLB_TMP" >nul 2>&1
 
-if exist "%GLB_TMP%" (
+rem "arquivo existe" sozinho nao prova que o download deu certo: uma conexao que cai no meio
+rem do jeito pode deixar um .ps1.tmp truncado no disco mesmo assim, e substituir a copia boa
+rem por um arquivo pela metade e pior que nao substituir nada. So confia no download se o
+rem powershell terminou com sucesso (ERRORLEVEL 0), o arquivo existe, tem tamanho e comeca com
+rem o texto que so o .ps1 de verdade tem.
+set "GLB_DL_OK=0"
+if %ERRORLEVEL% EQU 0 if exist "%GLB_TMP%" (
+    for %%A in ("%GLB_TMP%") do if %%~zA GTR 0 set "GLB_DL_OK=1"
+)
+if "%GLB_DL_OK%"=="1" (
+    findstr /c:"GoLiveBypass - instalador automatico" "%GLB_TMP%" >nul || set "GLB_DL_OK=0"
+)
+
+if "%GLB_DL_OK%"=="1" (
     move /y "%GLB_TMP%" "%GLB_SCRIPT%" >nul
 ) else if exist "%GLB_SCRIPT%" (
     echo.
     echo   Nao consegui baixar a versao mais recente, usando a copia local que ja estava aqui.
+    del /f /q "%GLB_TMP%" >nul 2>&1
 ) else (
     echo.
     echo   Nao consegui baixar o instalador. Verifique sua conexao.

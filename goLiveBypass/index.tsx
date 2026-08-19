@@ -413,6 +413,13 @@ export default definePlugin({
 
     start() {
         forceRegion();
+
+        // No boot do app, o processo principal ja chama isto sozinho se o plugin estiver
+        // ligado (enable() ve o roteador de pe e nao faz nada de novo). O caso que faltava e
+        // ativar o plugin com o Discord ja aberto, ou desativar e reativar na mesma sessao:
+        // sem chamar aqui, o roteador nunca nascia, e o plugin ficava marcado como ligado com
+        // o gateway saindo direto do mesmo jeito.
+        Native?.enable().catch(error => logger.error("Failed to reach the desktop process", error));
     },
 
     stop() {

@@ -852,18 +852,15 @@ async function stopRouter() {
     log("roteador desligado, tudo volta a sair direto");
 }
 
-// Sairam daqui tres protecoes da versao que aplicava proxy na sessao inteira: o prazo de
-// dois minutos que soltava o proxy sozinho, a marca de boot pendente gravada em disco para
-// nao repetir uma abertura travada, e o did-fail-load que desistia quando a pagina nao
-// carregava. As tres cobriam o mesmo acidente, saida quebrada segurando o Discord inteiro
-// sem tela e sem como pedir socorro, e esse acidente nao existe mais: so o gateway passa
-// pela saida, o resto do app nunca depende dela, e a conexao que depende cai para direta
-// sozinha dentro do roteador. Manter o prazo hoje seria dano puro, porque ele arrancaria o
-// gateway da saida no meio de uma sessao que estava funcionando.
-app.whenReady().then(async () => {
-    try {
-        if (!pluginEnabled()) return;
+// Extraida do app.whenReady original para ser chamavel de novo: o renderer so chama enable()
+// no start() do plugin, e um plugin desativado no boot e ativado depois (ou desativado e
+// reativado na mesma sessao do Discord) nunca disparava o boot original, porque ele so corria
+// uma vez, atado ao evento de abertura do app. O roteador ficava de pe, mas ninguem nunca
+// mandava ele nascer -- plugin marcado como ligado, gateway saindo direto do mesmo jeito.
+export async function enable(_?: IpcMainInvokeEvent) {
+    if (scope !== "off") return { success: true as const };
 
+    try {
         // A regra do sistema e lida antes de qualquer coisa, para o PAC saber para onde mandar
         // tudo que nao e Discord.
         try {
@@ -877,11 +874,25 @@ app.whenReady().then(async () => {
         // Escolher a saida acontece depois, em paralelo com o app carregando.
         await startRouter(routesLogin() ? "login" : "gateway");
         chooseExit();
+        return { success: true as const };
     } catch {
-        // Falhar aqui e abrir o Discord sem bypass. Deixar a excecao subir era abrir o
-        // Discord sem processo principal, ou seja, nao abrir.
+        // Falhar aqui e abrir o Discord sem bypass. Deixar a excecao subir no boot era abrir
+        // o Discord sem processo principal, ou seja, nao abrir.
         await stopRouter();
+        return { success: false as const };
     }
+}
+
+// Sairam daqui tres protecoes da versao que aplicava proxy na sessao inteira: o prazo de
+// dois minutos que soltava o proxy sozinho, a marca de boot pendente gravada em disco para
+// nao repetir uma abertura travada, e o did-fail-load que desistia quando a pagina nao
+// carregava. As tres cobriam o mesmo acidente, saida quebrada segurando o Discord inteiro
+// sem tela e sem como pedir socorro, e esse acidente nao existe mais: so o gateway passa
+// pela saida, o resto do app nunca depende dela, e a conexao que depende cai para direta
+// sozinha dentro do roteador. Manter o prazo hoje seria dano puro, porque ele arrancaria o
+// gateway da saida no meio de uma sessao que estava funcionando.
+app.whenReady().then(async () => {
+    if (pluginEnabled()) await enable();
 }).catch(() => { });
 
 export async function sessionOpened(_: IpcMainInvokeEvent) {
