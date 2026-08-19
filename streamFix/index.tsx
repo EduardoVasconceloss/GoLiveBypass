@@ -14,9 +14,9 @@ import definePlugin, { OptionType, PluginNative } from "@utils/types";
 import { findStoreLazy } from "@webpack";
 import { Constants, MaskedLink, RestAPI, SearchableSelect, showToast, Toasts, UserStore } from "@webpack/common";
 
-const Native = VencordNative?.pluginHelpers?.GoLiveBypass as PluginNative<typeof import("./native")> | undefined;
+const Native = VencordNative?.pluginHelpers?.StreamFix as PluginNative<typeof import("./native")> | undefined;
 
-const logger = new Logger("GoLiveBypass");
+const logger = new Logger("StreamFix");
 
 interface RegionStore {
     getPreferredRegion(): string | null;
@@ -131,7 +131,7 @@ function StreamRegionPicker() {
 function AboutPlugin() {
     return (
         <Paragraph>
-            Made by bezumiya. Source and issues on <MaskedLink href="https://github.com/bezumiya/GoLiveBypass">GitHub</MaskedLink>, and I post about it on <MaskedLink href="https://twitter.com/obezumiya">Twitter</MaskedLink>.
+            StreamFix started as a fork of bezumiya's GoLiveBypass. Source and issues on <MaskedLink href="https://github.com/EduardoVasconceloss/GoLiveBypass">GitHub</MaskedLink>; the original project is at <MaskedLink href="https://github.com/bezumiya/GoLiveBypass">bezumiya/GoLiveBypass</MaskedLink>.
         </Paragraph>
     );
 }
@@ -184,7 +184,7 @@ function forceRegion() {
     if (typeof store.getPreferredRegion !== "function"
         || typeof store.getPreferredRegions !== "function"
         || typeof store.shouldIncludePreferredRegion !== "function") {
-        showToast("GoLiveBypass could not find Discord's region picker, so your call region is untouched.", Toasts.Type.FAILURE);
+        showToast("StreamFix could not find Discord's region picker, so your call region is untouched.", Toasts.Type.FAILURE);
         return;
     }
 
@@ -240,11 +240,11 @@ async function retryBehindExit() {
     try {
         const result = await Native.retryWithProxy(settings.store.excludedCountries);
         if (result.retried) {
-            showToast(`GoLiveBypass is reloading behind the exit (attempt ${result.attempt}).`);
+            showToast(`StreamFix is reloading behind the exit (attempt ${result.attempt}).`);
             return;
         }
 
-        showToast(`GoLiveBypass could not unlock this session (${result.reason}). Point Exit at a server of your own, then restart Discord from the tray.`, Toasts.Type.FAILURE);
+        showToast(`StreamFix could not unlock this session (${result.reason}). Point Exit at a server of your own, then restart Discord from the tray.`, Toasts.Type.FAILURE);
     } catch (error) {
         logger.error("Failed to reach the desktop process", error);
     }
@@ -306,7 +306,7 @@ function ask(store: object, method: string, ...args: unknown[]) {
 
 async function buildReport() {
     const user = UserStore.getCurrentUser();
-    const lines: string[] = ["GoLiveBypass, diagnostico"];
+    const lines: string[] = ["StreamFix, diagnostico"];
 
     lines.push("", "== o servidor te bloqueia? ==");
     lines.push(`atribuicao do video guard: ${JSON.stringify(user == null ? "sem usuario" : ask(ApexExperimentStore, "getServerAssignment", "user", user.id, VIDEO_GUARD))}`);
@@ -352,7 +352,7 @@ async function buildReport() {
 }
 
 export default definePlugin({
-    name: "GoLiveBypass",
+    name: "StreamFix",
     description: "Turns Go Live and camera back on for Brazilian accounts by neutralising Discord's video guard, and keeps your calls on the region you pick.",
     authors: [{ name: "bezumiya", id: 1366453661970071633n }],
     tags: ["Voice", "Privacy"],
@@ -383,7 +383,7 @@ export default definePlugin({
 
     commands: [
         {
-            name: "golivebypass",
+            name: "streamfix",
             description: "Copia um diagnostico do plugin para voce colar no suporte.",
             async execute(_args, ctx) {
                 const report = await buildReport();

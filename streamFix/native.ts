@@ -103,7 +103,7 @@ function parseProxy(proxyRules: string) {
 }
 
 function pluginSettings() {
-    return RendererSettings.plain.plugins?.GoLiveBypass;
+    return RendererSettings.plain.plugins?.StreamFix;
 }
 
 function pluginEnabled() {
@@ -144,7 +144,7 @@ function routesLogin() {
 function readPool(): PoolEntry[] {
     let stored: unknown;
     try {
-        stored = NativeSettings.plain.plugins?.GoLiveBypass?.pool;
+        stored = NativeSettings.plain.plugins?.StreamFix?.pool;
     } catch {
         return [];
     }
@@ -165,8 +165,8 @@ function readPool(): PoolEntry[] {
 // pote custa uma busca a mais no proximo boot -- deixar a excecao subir custava o processo.
 function writePool(entries: PoolEntry[]) {
     try {
-        NativeSettings.store.plugins.GoLiveBypass ??= {};
-        NativeSettings.store.plugins.GoLiveBypass.pool = entries
+        NativeSettings.store.plugins.StreamFix ??= {};
+        NativeSettings.store.plugins.StreamFix.pool = entries
             .sort((a, b) => a.ms - b.ms)
             .slice(0, POOL_SIZE);
     } catch {
