@@ -742,6 +742,28 @@ function Install-TorDaemon {
     Write-Step "Baixando o Tor $version (uns 20 MB)"
     Invoke-WebRequest -UseBasicParsing -Uri $archiveUrl -OutFile $archivePath
 
+    # O Tor Project publica o sha256 de cada artefato, assinado com a chave deles. Nao
+    # verificamos a assinatura PGP em si -- exigiria gpg, que o Windows nao traz por padrao,
+    # so pra esta etapa -- mas conferir o hash contra o valor publicado no dominio oficial ja
+    # pega dois problemas reais: download corrompido, e um binario diferente servido nesse
+    # caminho especifico por um CDN comprometido, sem precisar quebrar o TLS em si.
+    Write-Step 'Conferindo o hash do download contra o publicado pelo Tor Project'
+    $archiveFileName = "tor-expert-bundle-windows-x86_64-$version.tar.gz"
+    $sumsUrl = "https://dist.torproject.org/torbrowser/$version/sha256sums-signed-build.txt"
+    $sums = (Invoke-WebRequest -UseBasicParsing -Uri $sumsUrl).Content
+    $expectedLine = ($sums -split "`r?`n") | Where-Object { $_ -match [regex]::Escape($archiveFileName) } | Select-Object -First 1
+    if (-not $expectedLine) {
+        Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+        throw "Nao achei o hash oficial de $archiveFileName na lista publicada pelo Tor Project. Abortando por seguranca."
+    }
+
+    $expectedHash = ($expectedLine.Trim() -split '\s+')[0].ToLowerInvariant()
+    $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($expectedHash -ne $actualHash) {
+        Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+        throw 'O hash do Tor baixado nao bate com o publicado pelo Tor Project. Abortando: o arquivo pode ter sido adulterado no caminho.'
+    }
+
     New-Item -ItemType Directory -Path $TorRoot -Force | Out-Null
     Write-Step 'Extraindo'
     & tar -xzf $archivePath -C $TorRoot
