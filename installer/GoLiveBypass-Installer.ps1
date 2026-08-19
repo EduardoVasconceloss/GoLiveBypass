@@ -94,6 +94,30 @@ function Get-RepoFile($relativePath) {
     }
 }
 
+# O PowerShell embrulha tudo que um comando externo escreve em stderr como um
+# NativeCommandError, e com $ErrorActionPreference = 'Stop' no topo deste script isso vira
+# excecao fatal na PRIMEIRA linha de stderr que a ferramenta escrever -- mesmo sendo so um
+# aviso inofensivo, como o do pnpm avisando a propria versao. Isso derrubava git clone, pnpm
+# install/build/inject e ate winget no meio do caminho, mesmo quando o comando ia terminar
+# bem. Quem de fato diz se um comando externo falhou e o $LASTEXITCODE dele, ja checado logo
+# depois de cada chamada -- entao aqui so relaxamos a checagem do PowerShell em si.
+function Invoke-Native([ScriptBlock] $Command) {
+    $previous = $ErrorActionPreference
+    $ErrorActionPreference = 'Continue'
+    try {
+        # 2>&1 mistura stderr no mesmo stream, e o ForEach devolve o texto puro da mensagem em
+        # vez do ErrorRecord inteiro -- sem isso cada linha aparece em vermelho com "ERROR:" na
+        # frente, mesmo sendo so a saida normal do comando (o aviso de versao do pnpm, o nome
+        # de cada arquivo gerado). Pra quem nao entende o que esta vendo, uma parede de "ERROR:"
+        # antes de "Pronto" parece que algo quebrou mesmo tendo dado tudo certo.
+        & $Command 2>&1 | ForEach-Object {
+            if ($_ -is [Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ }
+        }
+    } finally {
+        $ErrorActionPreference = $previous
+    }
+}
+
 function Test-Tool($name) {
     return [bool] (Get-Command $name -ErrorAction SilentlyContinue)
 }
@@ -318,7 +342,7 @@ function Install-Toolchain($needGit) {
         foreach ($tool in $missing) {
             $id = if ($tool -eq 'git') { 'Git.Git' } else { 'OpenJS.NodeJS.LTS' }
             Write-Step "winget install $id"
-            & winget install --id $id --accept-source-agreements --accept-package-agreements --silent
+            Invoke-Native { winget install --id $id --accept-source-agreements --accept-package-agreements --silent }
         }
 
         # O winget grava o PATH novo no registro (Machine/User), e da pra reler isso no mesmo
@@ -348,7 +372,7 @@ function Install-Toolchain($needGit) {
     # vencidas: o atalho existe e mesmo assim quebra com "Cannot find matching keyid".
     # O npm instala o pnpm direto, sem essa etapa, entao vamos direto por ele.
     Write-Step 'Instalando o pnpm pelo npm'
-    & npm install -g pnpm
+    Invoke-Native { npm install -g pnpm }
     Update-PathFromEnvironment
 
     if (-not (Test-Pnpm)) {
@@ -380,7 +404,7 @@ function Install-Mod($choice) {
     }
 
     Write-Step "git clone $($info.Git)"
-    & git clone --depth 1 $info.Git $target
+    Invoke-Native { git clone --depth 1 $info.Git $target }
     if ($LASTEXITCODE -ne 0) { throw 'git clone falhou' }
 
     return $target
@@ -420,12 +444,12 @@ function Build-Mod($root) {
     try {
         if (-not (Test-Path -LiteralPath (Join-Path $root 'node_modules'))) {
             Write-Step 'Instalando dependencias (na primeira vez demora alguns minutos)'
-            & pnpm install
+            Invoke-Native { pnpm install }
             if ($LASTEXITCODE -ne 0) { throw 'pnpm install falhou' }
         }
 
         Write-Step 'Compilando'
-        & pnpm build
+        Invoke-Native { pnpm build }
         if ($LASTEXITCODE -ne 0) { throw 'pnpm build falhou' }
     } finally {
         Pop-Location
@@ -437,7 +461,7 @@ function Invoke-Injection($root) {
     try {
         Stop-Discord
         Write-Step 'Injetando no Discord'
-        & pnpm inject
+        Invoke-Native { pnpm inject }
         if ($LASTEXITCODE -ne 0) { throw 'pnpm inject falhou' }
     } finally {
         Pop-Location
@@ -849,7 +873,7 @@ function Install-TorDaemon {
 
     New-Item -ItemType Directory -Path $TorRoot -Force | Out-Null
     Write-Step 'Extraindo'
-    & tar -xzf $archivePath -C $TorRoot
+    Invoke-Native { tar -xzf $archivePath -C $TorRoot }
     Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
 
     if (-not (Test-Path -LiteralPath $TorExe)) { throw 'O pacote baixado do Tor nao trouxe o tor.exe esperado.' }
@@ -970,7 +994,7 @@ function Wait-DiscordExit($root) {
         # finally para que Ctrl+C tambem desfaca, em vez de deixar o Discord injetado.
         Push-Location -LiteralPath $root
         try {
-            & pnpm uninject
+            Invoke-Native { pnpm uninject }
             if ($LASTEXITCODE -ne 0) { Write-Warn 'O pnpm uninject falhou. Rode "pnpm uninject" na pasta do mod.' }
             else { Write-Ok 'Discord restaurado.' }
         } finally { Pop-Location }
@@ -990,7 +1014,7 @@ function Invoke-RestoreEverything {
         Push-Location -LiteralPath $root
         try {
             Write-Step 'Desfazendo a injecao'
-            & pnpm uninject
+            Invoke-Native { pnpm uninject }
         } finally { Pop-Location }
     } else {
         Write-Warn 'Nao achei o fonte do mod, entao so posso parar por aqui.'
