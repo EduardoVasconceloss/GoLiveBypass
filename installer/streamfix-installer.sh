@@ -18,8 +18,8 @@ set -euo pipefail
 
 # Commit fixo, nao "main": evita execucao remota de codigo via um push nao revisado. Bump faz
 # parte de cortar release nova.
-REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/3fee0e5"
-PLUGIN_FILES=("goLiveBypass/index.tsx" "goLiveBypass/native.ts")
+REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/04a0d03"
+PLUGIN_FILES=("streamFix/index.tsx" "streamFix/native.ts")
 PLUGIN_DIR_NAME="streamFix"
 LEGACY_PLUGIN_DIR_NAME="goLiveBypass"
 EQUICORD_GIT="https://github.com/Equicord/Equicord"
@@ -49,7 +49,7 @@ fail() { printf '\n  %s[X] %s%s\n\n' "$C_RED" "$1" "$C_OFF" >&2; exit 1; }
 banner() {
     printf '\n  %sStreamFix%s\n' "$C_CYAN$C_BOLD" "$C_OFF"
     printf '  %sGo Live e camera de volta no Discord%s\n' "$C_DIM" "$C_OFF"
-    printf '  %shttps://github.com/EduardoVasconceloss/GoLiveBypass (fork de bezumiya/GoLiveBypass)%s\n\n' "$C_DIM" "$C_OFF"
+    printf '  %shttps://github.com/EduardoVasconceloss/StreamFix (fork de bezumiya/GoLiveBypass)%s\n\n' "$C_DIM" "$C_OFF"
 }
 
 confirm() {
