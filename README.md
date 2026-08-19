@@ -137,7 +137,7 @@ Um script encontra sozinho o Equicord ou o Vencord que você tem, instala o plug
 **Linux:**
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/bezumiya/GoLiveBypass/main/installer/golivebypass-installer.sh
+curl -fsSLO https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/golivebypass-installer.sh
 chmod +x golivebypass-installer.sh
 ./golivebypass-installer.sh
 ```
@@ -164,7 +164,7 @@ Escolhendo instalar, ele pergunta três coisas: **onde** (usar o mod que já est
 **Pelo PowerShell:**
 
 ```powershell
-irm https://raw.githubusercontent.com/bezumiya/GoLiveBypass/main/installer/GoLiveBypass-Installer.ps1 -OutFile GoLiveBypass-Installer.ps1
+irm https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/GoLiveBypass-Installer.ps1 -OutFile GoLiveBypass-Installer.ps1
 powershell -ExecutionPolicy Bypass -File .\GoLiveBypass-Installer.ps1
 ```
 
@@ -293,8 +293,8 @@ Isso baixa tudo que o Equicord precisa para compilar (demora um pouco na primeir
 
 Duas formas de baixar este repositório:
 
-- **Pelo terminal** (estando fora da pasta Equicord): `git clone https://github.com/bezumiya/GoLiveBypass`
-- **Pelo navegador**: abra [github.com/bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass), clique no botão verde **Code → Download ZIP** e extraia o arquivo
+- **Pelo terminal** (estando fora da pasta Equicord): `git clone https://github.com/EduardoVasconceloss/GoLiveBypass`
+- **Pelo navegador**: abra [github.com/EduardoVasconceloss/GoLiveBypass](https://github.com/EduardoVasconceloss/GoLiveBypass), clique no botão verde **Code → Download ZIP** e extraia o arquivo
 
 Depois copie a pasta **`goLiveBypass`** (a que contém `index.tsx` e `native.ts`) para dentro de:
 
