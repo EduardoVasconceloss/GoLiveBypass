@@ -93,8 +93,11 @@ function Test-Pnpm {
     if (-not (Test-Tool 'pnpm')) { return $false }
 
     # 2>$null para o erro do corepack nao assustar quem so vai ver a instalacao seguir.
-    & pnpm --version 2>$null | Out-Null
-    return $LASTEXITCODE -eq 0
+    $version = & pnpm --version 2>$null
+    if ($LASTEXITCODE -ne 0) { return $false }
+
+    Write-Step "pnpm encontrado: $version"
+    return $true
 }
 
 function Update-PathFromEnvironment {
@@ -303,18 +306,15 @@ function Install-Toolchain($needGit) {
         exit 0
     }
 
-    if (-not (Test-Pnpm) -and (Test-Tool 'corepack')) {
-        Write-Step 'Habilitando o pnpm (corepack enable)'
-        & corepack enable
-        Update-PathFromEnvironment
-    }
+    if (Test-Pnpm) { return }
 
-    if (-not (Test-Pnpm)) {
-        # O npm instala o pnpm direto, sem a conferencia de assinatura que derruba o corepack.
-        Write-Step 'O corepack nao entregou um pnpm que roda, instalando pelo npm'
-        & npm install -g pnpm
-        Update-PathFromEnvironment
-    }
+    # O Corepack cria um atalho do pnpm antes de saber que versao usar, e na primeira
+    # execucao ele confere a assinatura contra chaves embutidas que no Node 22 estao
+    # vencidas: o atalho existe e mesmo assim quebra com "Cannot find matching keyid".
+    # O npm instala o pnpm direto, sem essa etapa, entao vamos direto por ele.
+    Write-Step 'Instalando o pnpm pelo npm'
+    & npm install -g pnpm
+    Update-PathFromEnvironment
 
     if (-not (Test-Pnpm)) {
         throw 'Nao consegui deixar o pnpm funcionando. Abra um terminal e rode: npm install -g pnpm'
