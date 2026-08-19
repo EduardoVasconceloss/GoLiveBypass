@@ -660,21 +660,80 @@ function Test-PortOpen($port, $timeoutMs = 500) {
 $TorVersion = '15.0.20'
 $TorArchiveSha256 = 'd59bff934e3ad876e1623e24ae60c19aeea56f50178093b9f86fba230639f949'
 
-function Start-TorDaemon {
-    if (-not (Test-Path -LiteralPath $TorExe)) { return $false }
-    if (Test-PortOpen $TorSocksPort) { return $true }
+# Faz um CONNECT SOCKS5 de verdade ate um host HTTPS e autentica o TLS, igual o measure() do
+# native.ts. Um review adversarial apontou certo que confirmar so a porta TCP aberta nao prova
+# que o Tor consegue carregar trafego: o listener sobe quase na hora, bem antes dos primeiros
+# circuitos ficarem prontos (medido: listener de pe no mesmo segundo, trafego real passando
+# uns 15-20s depois). Se o instalador declarasse "pronto" cedo demais, a pessoa que escolheu
+# Tor explicitamente sairia por uma proxy gratuita sem saber -- o plugin testa por so 2,5s
+# antes de desistir do endereco escolhido e cair para automatico.
+function Test-SocksHttpsConnect($socksPort, $targetHost, $targetPort, $timeoutMs) {
+    $client = $null
+    try {
+        $client = New-Object System.Net.Sockets.TcpClient
+        $connectTask = $client.ConnectAsync('127.0.0.1', $socksPort)
+        if (-not $connectTask.Wait($timeoutMs) -or -not $client.Connected) { return $false }
 
-    Start-Process -FilePath $TorExe -ArgumentList @('-f', $TorRc) -WorkingDirectory $TorRoot -WindowStyle Hidden
+        $stream = $client.GetStream()
+        $stream.ReadTimeout = $timeoutMs
+        $stream.WriteTimeout = $timeoutMs
 
-    # O SOCKS listener abre quase na hora, bem antes do Tor terminar de montar os primeiros
-    # circuitos (medido: listener de pe no mesmo segundo, bootstrap 100% uns 15s depois). Nao
-    # precisamos esperar o bootstrap inteiro aqui, so confirmar que a porta respondeu.
-    for ($i = 0; $i -lt 20; $i++) {
-        if (Test-PortOpen $TorSocksPort) { return $true }
-        Start-Sleep -Milliseconds 500
+        # Saudacao SOCKS5: versao 5, 1 metodo oferecido, metodo 0 (sem autenticacao)
+        $stream.Write([byte[]](5, 1, 0), 0, 3)
+        $greeting = New-Object byte[] 2
+        if ($stream.Read($greeting, 0, 2) -ne 2 -or $greeting[0] -ne 5 -or $greeting[1] -ne 0) { return $false }
+
+        # Pedido CONNECT por nome de dominio (tipo 3), formato TLV do proprio SOCKS5
+        $hostBytes = [Text.Encoding]::ASCII.GetBytes($targetHost)
+        $request = [Collections.Generic.List[byte]]::new()
+        $request.AddRange([byte[]](5, 1, 0, 3, [byte]$hostBytes.Length))
+        $request.AddRange($hostBytes)
+        $request.Add([byte](($targetPort -shr 8) -band 0xFF))
+        $request.Add([byte]($targetPort -band 0xFF))
+        $requestBytes = $request.ToArray()
+        $stream.Write($requestBytes, 0, $requestBytes.Length)
+
+        $reply = New-Object byte[] 10
+        $read = $stream.Read($reply, 0, 10)
+        if ($read -lt 2 -or $reply[1] -ne 0) { return $false }
+
+        $ssl = New-Object System.Net.Security.SslStream($stream, $false)
+        $ssl.AuthenticateAsClient($targetHost)
+        return $ssl.IsAuthenticated
+    } catch {
+        return $false
+    } finally {
+        if ($client) { $client.Close() }
     }
+}
+
+function Test-TorCircuit($timeoutMs) {
+    $deadline = (Get-Date).AddMilliseconds($timeoutMs)
+    do {
+        if (Test-SocksHttpsConnect $TorSocksPort 'www.torproject.org' 443 5000) { return $true }
+        Start-Sleep -Milliseconds 1000
+    } while ((Get-Date) -lt $deadline)
 
     return $false
+}
+
+function Start-TorDaemon {
+    if (-not (Test-PortOpen $TorSocksPort)) {
+        if (-not (Test-Path -LiteralPath $TorExe)) { return $false }
+
+        Start-Process -FilePath $TorExe -ArgumentList @('-f', $TorRc) -WorkingDirectory $TorRoot -WindowStyle Hidden
+
+        $portReady = $false
+        for ($i = 0; $i -lt 20; $i++) {
+            if (Test-PortOpen $TorSocksPort) { $portReady = $true; break }
+            Start-Sleep -Milliseconds 500
+        }
+        if (-not $portReady) { return $false }
+    }
+
+    # O circuito real pode levar uns 15-20s para ficar pronto num boot frio: orcamento largo
+    # o bastante para cobrir isso, sondando a cada segundo em vez de esperar tudo de uma vez.
+    return Test-TorCircuit 30000
 }
 
 # So para a sessao atual: sem isso, o Tor so voltaria a existir na proxima vez que alguem
