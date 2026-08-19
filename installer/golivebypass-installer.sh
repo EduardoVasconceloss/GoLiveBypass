@@ -21,7 +21,7 @@ set -euo pipefail
 # de quem tem acesso) vira execucao remota de codigo no proximo instalador rodado, sem revisao
 # nenhuma no meio. Um commit especifico e enderecado pelo hash, entao o conteudo nesse caminho
 # nunca muda. Atualizar isto para o HEAD atual faz parte de cortar uma release nova.
-REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/4fb934d"
+REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/0ebc1d7"
 PLUGIN_FILES=("goLiveBypass/index.tsx" "goLiveBypass/native.ts")
 PLUGIN_DIR_NAME="goLiveBypass"
 EQUICORD_GIT="https://github.com/Equicord/Equicord"

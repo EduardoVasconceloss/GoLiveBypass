@@ -40,7 +40,7 @@ try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch 
 # nenhuma revisao no meio. Um commit especifico e enderecado pelo hash: o conteudo nesse
 # caminho nunca muda. Atualizar isto para o HEAD atual faz parte de cortar uma release nova
 # do instalador (junto com git tag installer-vN e a recompilacao do .exe).
-$RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/4fb934d'
+$RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/0ebc1d7'
 $PluginFiles = @('goLiveBypass/index.tsx', 'goLiveBypass/native.ts')
 $PluginDirName = 'goLiveBypass'
 $DiscordNames = @('Discord', 'DiscordCanary', 'DiscordPTB')
