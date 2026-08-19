@@ -650,16 +650,15 @@ function Test-PortOpen($port, $timeoutMs = 500) {
     }
 }
 
-function Get-LatestTorVersion {
-    $html = (Invoke-WebRequest -UseBasicParsing -Uri 'https://dist.torproject.org/torbrowser/').Content
-
-    # So versoes totalmente numericas (15.0.20): pastas com letra sao pre-lancamento (16.0a9),
-    # e um alpha instavel e pior que a proxy gratuita que estamos tentando substituir.
-    $versions = [regex]::Matches($html, 'href="(\d+\.\d+\.\d+)/"') | ForEach-Object { $_.Groups[1].Value }
-    if (-not $versions) { throw 'Nao consegui achar uma versao do Tor pra baixar.' }
-
-    return ($versions | Sort-Object { [version]$_ } | Select-Object -Last 1)
-}
+# Fixos, nao descobertos em tempo real. dist.torproject.org serve tanto o binario quanto o
+# sha256sums-signed-build.txt do mesmo jeito (HTTPS simples, sem checagem de chave PGP): um
+# review adversarial apontou certo que buscar o hash "esperado" da mesma origem que o binario
+# nao prova nada contra uma origem comprometida, porque as duas respostas vem do mesmo lugar
+# nao confiavel. Conferimos este hash a mao, uma vez, contra o sha256sums-signed-build.txt de
+# https://dist.torproject.org/torbrowser/15.0.20/ antes de publicar. Trocar a versao aqui
+# exige repetir essa conferencia manual e faz parte de cortar uma release nova do instalador.
+$TorVersion = '15.0.20'
+$TorArchiveSha256 = 'd59bff934e3ad876e1623e24ae60c19aeea56f50178093b9f86fba230639f949'
 
 function Start-TorDaemon {
     if (-not (Test-Path -LiteralPath $TorExe)) { return $false }
@@ -740,34 +739,23 @@ function Install-TorDaemon {
         throw 'Falta o tar.exe (vem com o Windows 10 versao 1803 ou mais nova). Atualize o Windows, ou use Proxy minha com um Tor instalado a mao.'
     }
 
-    Write-Step 'Descobrindo a versao mais recente do Tor'
-    $version = Get-LatestTorVersion
-    $archiveUrl = "https://dist.torproject.org/torbrowser/$version/tor-expert-bundle-windows-x86_64-$version.tar.gz"
-    $archivePath = Join-Path $env:TEMP "tor-expert-bundle-$version.tar.gz"
+    $archiveFileName = "tor-expert-bundle-windows-x86_64-$TorVersion.tar.gz"
+    $archiveUrl = "https://dist.torproject.org/torbrowser/$TorVersion/$archiveFileName"
+    $archivePath = Join-Path $env:TEMP $archiveFileName
 
-    Write-Step "Baixando o Tor $version (uns 20 MB)"
+    Write-Step "Baixando o Tor $TorVersion (uns 20 MB)"
     Invoke-WebRequest -UseBasicParsing -Uri $archiveUrl -OutFile $archivePath
 
-    # O Tor Project publica o sha256 de cada artefato, assinado com a chave deles. Nao
-    # verificamos a assinatura PGP em si -- exigiria gpg, que o Windows nao traz por padrao,
-    # so pra esta etapa -- mas conferir o hash contra o valor publicado no dominio oficial ja
-    # pega dois problemas reais: download corrompido, e um binario diferente servido nesse
-    # caminho especifico por um CDN comprometido, sem precisar quebrar o TLS em si.
-    Write-Step 'Conferindo o hash do download contra o publicado pelo Tor Project'
-    $archiveFileName = "tor-expert-bundle-windows-x86_64-$version.tar.gz"
-    $sumsUrl = "https://dist.torproject.org/torbrowser/$version/sha256sums-signed-build.txt"
-    $sums = (Invoke-WebRequest -UseBasicParsing -Uri $sumsUrl).Content
-    $expectedLine = ($sums -split "`r?`n") | Where-Object { $_ -match [regex]::Escape($archiveFileName) } | Select-Object -First 1
-    if (-not $expectedLine) {
-        Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
-        throw "Nao achei o hash oficial de $archiveFileName na lista publicada pelo Tor Project. Abortando por seguranca."
-    }
-
-    $expectedHash = ($expectedLine.Trim() -split '\s+')[0].ToLowerInvariant()
+    # Contra $TorArchiveSha256, fixo no script e conferido a mao antes de publicar -- nao
+    # contra um hash buscado agora do mesmo dist.torproject.org que serviu o binario. Um hash
+    # "esperado" vindo da mesma origem nao prova nada: uma origem comprometida serviria os
+    # dois, binario e checksum, coerentes entre si. O hash fixo aqui e a ancora de confianca
+    # independente -- foi conferido de um lugar e num momento diferentes do download real.
+    Write-Step 'Conferindo o hash do download'
     $actualHash = (Get-FileHash -LiteralPath $archivePath -Algorithm SHA256).Hash.ToLowerInvariant()
-    if ($expectedHash -ne $actualHash) {
+    if ($actualHash -ne $TorArchiveSha256) {
         Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
-        throw 'O hash do Tor baixado nao bate com o publicado pelo Tor Project. Abortando: o arquivo pode ter sido adulterado no caminho.'
+        throw 'O hash do Tor baixado nao bate com o hash fixo no instalador. Abortando: o arquivo pode ter sido adulterado no caminho.'
     }
 
     New-Item -ItemType Directory -Path $TorRoot -Force | Out-Null
