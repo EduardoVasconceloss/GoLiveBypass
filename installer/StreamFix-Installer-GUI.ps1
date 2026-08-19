@@ -25,7 +25,7 @@ Add-Type -AssemblyName System.Drawing
 # la). Nesse commit pinado o arquivo ainda se chamava GoLiveBypass-Installer.ps1 -- o path
 # abaixo aponta pro nome que ele tinha naquele commit, nao pro nome atual do arquivo local.
 # Bump faz parte de cortar release nova, junto com o pin do .ps1/.bat e os dois .exe.
-$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/0811e86'
+$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/0811e86'
 $CoreUrl = "$CoreRepoRaw/installer/GoLiveBypass-Installer.ps1"
 
 function Resolve-CoreScript {

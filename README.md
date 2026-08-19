@@ -137,7 +137,7 @@ Um script encontra sozinho o Equicord ou o Vencord que você tem, instala o plug
 **Linux:**
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/streamfix-installer.sh
+curl -fsSLO https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/main/installer/streamfix-installer.sh
 chmod +x streamfix-installer.sh
 ./streamfix-installer.sh
 ```
@@ -164,7 +164,7 @@ Escolhendo instalar, ele pergunta três coisas: **onde** (usar o mod que já est
 **Pelo PowerShell:**
 
 ```powershell
-irm https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/StreamFix-Installer.ps1 -OutFile StreamFix-Installer.ps1
+irm https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/main/installer/StreamFix-Installer.ps1 -OutFile StreamFix-Installer.ps1
 powershell -ExecutionPolicy Bypass -File .\StreamFix-Installer.ps1
 ```
 
@@ -293,8 +293,8 @@ Isso baixa tudo que o Equicord precisa para compilar (demora um pouco na primeir
 
 Duas formas de baixar este repositório:
 
-- **Pelo terminal** (estando fora da pasta Equicord): `git clone https://github.com/EduardoVasconceloss/GoLiveBypass`
-- **Pelo navegador**: abra [github.com/EduardoVasconceloss/GoLiveBypass](https://github.com/EduardoVasconceloss/GoLiveBypass), clique no botão verde **Code → Download ZIP** e extraia o arquivo
+- **Pelo terminal** (estando fora da pasta Equicord): `git clone https://github.com/EduardoVasconceloss/StreamFix`
+- **Pelo navegador**: abra [github.com/EduardoVasconceloss/StreamFix](https://github.com/EduardoVasconceloss/StreamFix), clique no botão verde **Code → Download ZIP** e extraia o arquivo
 
 Depois copie a pasta **`streamFix`** (a que contém `index.tsx` e `native.ts`) para dentro de:
 

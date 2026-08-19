@@ -50,7 +50,7 @@ foreach ($envVar in @('USERPROFILE', 'TEMP')) {
 
 # Commit fixo, nao "main": evita execucao remota de codigo via um push nao revisado. Bump faz
 # parte de cortar release nova (junto com a tag installer-vN e o .exe).
-$RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/3fee0e5'
+$RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/3fee0e5'
 $PluginFiles = @('goLiveBypass/index.tsx', 'goLiveBypass/native.ts')
 $PluginDirName = 'streamFix'
 $LegacyPluginDirName = 'goLiveBypass'
