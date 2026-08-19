@@ -359,6 +359,23 @@ function downloadText(url: string): Promise<string> {
     });
 }
 
+// O trace da Cloudflare prova que a saida chega na internet, mas nao que ela alcanca o
+// Discord especificamente. Uma rede que bloqueia so dominios do Discord -- o cenario que este
+// plugin existe para contornar -- passaria no Cloudflare e falharia bem na conexao que
+// importa. Sem esta segunda checagem essa saida entraria no pote como "boa", e o gateway so
+// descobriria que nao funciona na hora de tentar de verdade, gastando uma das poucas
+// tentativas do retryWithProxy. Nao exige HTTP 200: gateway.discord.gg responde 404 a um GET
+// comum (o endpoint de verdade e WebSocket, nao HTTP), mas qualquer linha de status valida ja
+// prova que a conexao chegou la, o TLS fechou com certificado bom, e nada no caminho
+// bloqueou ou interceptou.
+async function reachesGateway(proxy: string, timeoutMs: number) {
+    const socket = await openTunnel(proxy, GATEWAY_HOSTS[0], 443, timeoutMs);
+    if (socket === null) return false;
+
+    const response = await readOverTls(socket, GATEWAY_HOSTS[0], "/", timeoutMs);
+    return response !== null && /^HTTP\/1\.[01] \d{3}/.test(response);
+}
+
 async function measure(proxy: string, timeoutMs = PROBE_TIMEOUT_MS) {
     const started = Date.now();
 
@@ -372,6 +389,8 @@ async function measure(proxy: string, timeoutMs = PROBE_TIMEOUT_MS) {
     if (country === null) return null;
 
     const ip = /(?:^|\n)ip=(\S+)/.exec(response);
+
+    if (!(await reachesGateway(proxy, timeoutMs))) return null;
 
     return { proxy, country: country[1].toUpperCase(), ip: ip?.[1] ?? "", ms: Date.now() - started };
 }
@@ -794,7 +813,14 @@ async function installPac(redial: boolean) {
         // sessao recem autenticada a toa.
         if (redial) await session.defaultSession.closeAllConnections();
     } catch {
-        log("nao consegui aplicar a regra de rota, a sessao continua como estava");
+        // O setProxy do inicio do try pode ter pegado mesmo com uma etapa seguinte (o
+        // resolveProxy de confirmacao, ou o closeAllConnections) lancando excecao -- nesse
+        // caso o PAC fica aplicado de verdade, roteando trafego, enquanto a funcao devolve
+        // falha e quem chama acha que nada mudou. Reverter aqui tambem, e nao so no caminho
+        // onde o Chromium ignora o PAC, fecha esse buraco.
+        log("nao consegui aplicar a regra de rota, revertendo para a regra do sistema");
+        try { await session.defaultSession.setProxy({ mode: "system" }); } catch { }
+        scope = "off";
         return false;
     }
 
@@ -865,25 +891,31 @@ export async function enable(_?: IpcMainInvokeEvent) {
         // tudo que nao e Discord. So da para embutir UMA regra fixa no PAC, e um PAC ou
         // auto-detect de verdade pode escolher rotas diferentes por host (proxy corporativo,
         // DLP). Resolver so DISCORD_HOST e usar essa regra para TODO o resto seria plausivel
-        // de estar errado bem ali. Resolver um segundo host de Discord que fica fora da lista
-        // roteada (a CDN, que carrega anexos e emojis o tempo todo) e comparar detecta o caso
-        // host-dependente: se as duas respostas baterem, a regra do sistema provavelmente e
-        // fixa (proxy unico ou DIRECT) e reaplicar ela em todo mundo e seguro. Se divergirem,
-        // e mais honesto nao mexer em nada do que arriscar desviar trafego que o proxy
-        // corporativo tratava diferente por destino.
+        // de estar errado bem ali, e duas amostras nao provam nada sozinhas -- um PAC pode
+        // coincidir em dois hosts quaisquer e ainda divergir num terceiro que nao testamos.
+        // Comparar contra tres alvos deliberadamente bem diferentes entre si (a CDN do
+        // Discord, e um site sem nenhuma relacao com Discord) reduz bastante a chance de
+        // coincidencia: se os tres baterem, a regra do sistema provavelmente e fixa (proxy
+        // unico ou DIRECT) e reaplicar ela em todo mundo e seguro. Isto continua sendo uma
+        // amostragem, nao uma prova -- nao existe API no Electron para perguntar "isto e PAC
+        // com logica por host?" diretamente -- mas e a melhor aproximacao disponivel, e se
+        // divergirem e mais honesto nao mexer em nada do que arriscar desviar trafego que o
+        // proxy corporativo tratava diferente por destino.
         try {
-            const [discordRule, cdnRule] = await Promise.all([
-                session.defaultSession.resolveProxy(`https://${DISCORD_HOST}`),
-                session.defaultSession.resolveProxy("https://cdn.discordapp.com")
-            ]);
+            const probeUrls = [`https://${DISCORD_HOST}`, "https://cdn.discordapp.com", "https://www.google.com"];
+            const rules = await Promise.all(probeUrls.map(url => session.defaultSession.resolveProxy(url)));
 
+            const discordRule = rules[0];
             if (typeof discordRule === "string" && discordRule.trim() !== "") {
-                if (typeof cdnRule === "string" && cdnRule.trim() !== "" && cdnRule.trim() !== discordRule.trim()) {
+                const trimmed = discordRule.trim();
+                const varies = rules.slice(1).some(rule => typeof rule === "string" && rule.trim() !== "" && rule.trim() !== trimmed);
+
+                if (varies) {
                     log("a regra do sistema varia por host (proxy corporativo ou PAC de verdade); nao vou arriscar substituir por uma regra fixa");
                     return { success: false as const };
                 }
 
-                fallbackRule = discordRule.trim();
+                fallbackRule = trimmed;
             }
         } catch {
             // fica em DIRECT
