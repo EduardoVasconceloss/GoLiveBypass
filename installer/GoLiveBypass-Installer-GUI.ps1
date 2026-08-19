@@ -23,7 +23,7 @@ Add-Type -AssemblyName System.Drawing
 
 # Mesmo commit fixo que installer/GoLiveBypass-Installer.ps1 usa (ver o comentario de $RepoRaw
 # la). Bump faz parte de cortar release nova, junto com o pin do .ps1/.bat e os dois .exe.
-$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/430055f'
+$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/0811e86'
 $CoreUrl = "$CoreRepoRaw/installer/GoLiveBypass-Installer.ps1"
 
 function Resolve-CoreScript {
