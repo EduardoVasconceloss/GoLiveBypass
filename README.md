@@ -1,4 +1,4 @@
-# GoLiveBypass — Bypass do Go Live no Discord (Brasil)
+# StreamFix — Bypass do Go Live no Discord (Brasil)
 
 Plugin para **Equicord** e **Vencord**, feito por um desenvolvedor brasileiro, que **devolve o Go Live e a câmera para usuários brasileiros**. São duas travas: o Discord desabilita os próprios botões, e o servidor recusa a transmissão. O plugin desarma a primeira direto no cliente, e a segunda mandando **apenas o WebSocket de gateway** por uma saída fora do Brasil — todo o resto do Discord, e todo o resto do computador, continua saindo direto na velocidade normal, inclusive durante a abertura do app.
 
@@ -34,13 +34,13 @@ Um script faz tudo: acha o seu Equicord ou Vencord, instala o plugin, compila e 
 
 **Projeto**
 
-- [Estrutura](#estrutura) · [Licença](#licença) · [Autor](#autor) · [Agradecimentos](#agradecimentos)
+- [Estrutura](#estrutura) · [Licença](#licença) · [Origem](#origem) · [Agradecimentos](#agradecimentos)
 
 ## Por que este plugin existe
 
 Em agosto de 2026, a ANPD [ordenou que o Discord suspendesse as transmissões ao vivo (Go Live) no Brasil](https://www.gov.br/anpd/pt-br/assuntos/noticias/em-medida-preventiva-anpd-determina-que-discord-suspenda-transmissoes-ao-vivo-no-brasil), pouco depois de o país ter bloqueado o X (Twitter). Para quem depende dessas plataformas para se comunicar, organizar e denunciar, o recado foi claro: o acesso e a privacidade dos brasileiros na internet podem ser cortados por canetaço.
 
-O GoLiveBypass nasce dessa luta. Ele é uma ferramenta de **resistência à censura**: devolve o que foi cortado por canetaço, sem pedir licença e sem entregar o resto da sua conexão em troca.
+O StreamFix nasce dessa luta. Ele é uma ferramenta de **resistência à censura**: devolve o que foi cortado por canetaço, sem pedir licença e sem entregar o resto da sua conexão em troca.
 
 **O que ele entrega, verificado na prática:** como o WebSocket de gateway nasce fora do Brasil, o **Go Live e a câmera voltam a funcionar** para contas brasileiras — veja a seção abaixo.
 
@@ -296,17 +296,17 @@ Duas formas de baixar este repositório:
 - **Pelo terminal** (estando fora da pasta Equicord): `git clone https://github.com/EduardoVasconceloss/GoLiveBypass`
 - **Pelo navegador**: abra [github.com/EduardoVasconceloss/GoLiveBypass](https://github.com/EduardoVasconceloss/GoLiveBypass), clique no botão verde **Code → Download ZIP** e extraia o arquivo
 
-Depois copie a pasta **`goLiveBypass`** (a que contém `index.tsx` e `native.ts`) para dentro de:
+Depois copie a pasta **`streamFix`** (a que contém `index.tsx` e `native.ts`) para dentro de:
 
 ```
-Equicord/src/userplugins/goLiveBypass
+Equicord/src/userplugins/streamFix
 ```
 
 **Atenção aos detalhes que mais quebram:**
 
 - A pasta `userplugins` **não existe por padrão** — crie ela dentro de `src/`
 - Ela fica em `src/userplugins`, **ao lado** de `src/plugins` — **nunca dentro** de `src/plugins` (isso gera o erro `Could not resolve "./plugins/userplugins"` no build)
-- No final, o caminho dos arquivos deve ser exatamente `src/userplugins/goLiveBypass/index.tsx` e `src/userplugins/goLiveBypass/native.ts`
+- No final, o caminho dos arquivos deve ser exatamente `src/userplugins/streamFix/index.tsx` e `src/userplugins/streamFix/native.ts`
 
 ### Passo 4 — Compile
 
@@ -329,7 +329,7 @@ O instalador abre uma janelinha perguntando **qual Discord** você usa (Stable, 
 ### Passo 6 — Ative o plugin e use
 
 1. Abra o Discord
-2. Vá em **Configurações → Equicord (ou Vencord) → Plugins** e ative **GoLiveBypass**
+2. Vá em **Configurações → Equicord (ou Vencord) → Plugins** e ative **StreamFix**
 3. Deixe **Voice region** em `Automatic`, que é o padrão (leia o aviso abaixo antes de mudar)
 4. Reinicie o Discord por completo (bandeja, Quit). O roteador sobe junto com o app, e a saída é escolhida enquanto o Discord carrega
 5. Entre num canal de voz: **Go Live e câmera liberados**. Quem escolhe o servidor de voz é o Discord, e pode não ser o brasileiro. Não force `brazil` em **Voice region** sem ler o aviso na seção Configuração
@@ -361,21 +361,21 @@ Reconexão do gateway no meio da sessão não custa mais o desbloqueio — o soc
 
 ## Solução de problemas
 
-- **Discord carregando infinitamente**: não deveria mais acontecer por causa do plugin, já que ele não roteia nada além de `gateway.discord.gg` e cai para direto sozinho. Se acontecer mesmo assim, com o Discord fechado abra `%APPDATA%/Equicord/settings/settings.json` (ou `.../Vencord/...`) e coloque `"GoLiveBypass": { "enabled": false }`. Em `native-settings.json` a chave deste plugin é `pool` (as saídas guardadas), e apagá-la devolve tudo ao estado inicial. Se você vem de uma versão anterior, apague também `verifiedProxy`, `bootPending` e `lastKnownProxy`, que não são mais lidas.
-- **"GoLiveBypass is reloading behind the exit"**: a saída ficou pronta depois de o gateway já ter conectado, então a sessão nasceu desprotegida e o servidor manteve o bloqueio. O plugin procura uma saída que responda e recarrega o cliente sozinho para a sessão renascer atrás dela. São no máximo duas tentativas: sem esse teto, um bloqueio que a saída não resolve viraria recarregamento sem fim.
-- **"GoLiveBypass could not unlock this session"**: as tentativas acabaram e a sessão continua bloqueada. Aponte o campo **Proxy** para um servidor seu e reinicie o Discord pela bandeja. Rotear só o gateway pode não ter bastado no seu caso: **Session routing** em `Gateway and login` manda o `discord.com` junto durante a autenticação.
+- **Discord carregando infinitamente**: não deveria mais acontecer por causa do plugin, já que ele não roteia nada além de `gateway.discord.gg` e cai para direto sozinho. Se acontecer mesmo assim, com o Discord fechado abra `%APPDATA%/Equicord/settings/settings.json` (ou `.../Vencord/...`) e coloque `"StreamFix": { "enabled": false }`. Em `native-settings.json` a chave deste plugin é `pool` (as saídas guardadas), e apagá-la devolve tudo ao estado inicial. Se você vem de uma versão anterior, apague também `verifiedProxy`, `bootPending` e `lastKnownProxy`, que não são mais lidas.
+- **"StreamFix is reloading behind the exit"**: a saída ficou pronta depois de o gateway já ter conectado, então a sessão nasceu desprotegida e o servidor manteve o bloqueio. O plugin procura uma saída que responda e recarrega o cliente sozinho para a sessão renascer atrás dela. São no máximo duas tentativas: sem esse teto, um bloqueio que a saída não resolve viraria recarregamento sem fim.
+- **"StreamFix could not unlock this session"**: as tentativas acabaram e a sessão continua bloqueada. Aponte o campo **Proxy** para um servidor seu e reinicie o Discord pela bandeja. Rotear só o gateway pode não ter bastado no seu caso: **Session routing** em `Gateway and login` manda o `discord.com` junto durante a autenticação.
 - **Nenhuma saída passou nos testes**: nenhuma candidata fechou TLS com certificado válido naquele momento. Tente de novo, ou use Tor ou uma proxy sua no campo Proxy.
-- **Quer ver o que aconteceu**: rode `/golivebypass` em qualquer canal. Ele copia um diagnóstico com o estado das travas, da transmissão, da região e o registro do processo principal — qual saída foi testada, quanto tempo levou, em que país ela sai e por que foi recusada.
+- **Quer ver o que aconteceu**: rode `/streamfix` em qualquer canal. Ele copia um diagnóstico com o estado das travas, da transmissão, da região e o registro do processo principal — qual saída foi testada, quanto tempo levou, em que país ela sai e por que foi recusada.
 - **A região da call não mudou**: saia e entre de novo no canal. Canais de servidor com região fixada por um admin ignoram sua preferência, e numa call que já está rolando a região já foi decidida.
 - **Captcha ou verificação de telefone no login**: o Discord marca muitos IPs de proxies públicas. Use Tor ou outra proxy.
 - **`Cannot find matching keyid` ao instalar as dependências**: é o corepack, não o plugin. Ele cria o atalho do `pnpm` antes de saber que versão usar, e na primeira execução busca essa versão no registro do npm conferindo a assinatura com chaves embutidas nele — as que vêm no Node 22 estão vencidas. O instalador detecta isso e instala o pnpm pelo npm. Se estiver fazendo à mão, rode `npm install -g pnpm` e siga com `pnpm install`.
-- **Erro de build `Could not resolve "./plugins/userplugins"`**: você copiou a pasta para dentro de `src/plugins/` por engano. O caminho certo é `src/userplugins/goLiveBypass` — a pasta `userplugins` fica em `src/`, **ao lado** de `plugins`, e pode ser necessário criá-la.
-- **Plugin não aparece na lista**: confirme que a pasta está em `src/userplugins/goLiveBypass` (com `index.tsx` e `native.ts`) e que você rodou `pnpm build` + `pnpm inject` e reiniciou o Discord.
+- **Erro de build `Could not resolve "./plugins/userplugins"`**: você copiou a pasta para dentro de `src/plugins/` por engano. O caminho certo é `src/userplugins/streamFix` — a pasta `userplugins` fica em `src/`, **ao lado** de `plugins`, e pode ser necessário criá-la.
+- **Plugin não aparece na lista**: confirme que a pasta está em `src/userplugins/streamFix` (com `index.tsx` e `native.ts`) e que você rodou `pnpm build` + `pnpm inject` e reiniciou o Discord.
 
 ## Estrutura
 
 ```
-goLiveBypass/
+streamFix/
 ├── index.tsx                      # renderer: patches do video guard e do stream, seletor de região,
 │                                  #   override do RTCRegionStore, eventos de fluxo
 └── native.ts                      # processo principal: roteador SOCKS5 local e PAC por data: URL,
@@ -395,13 +395,9 @@ assets/
 
 GPL-3.0-or-later, mesma licença do Vencord/Equicord. Veja [LICENSE](LICENSE).
 
-## Autor
+## Origem
 
-**bezumiya**
-
-- GitHub: [bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass)
-- Twitter: [@obezumiya](https://twitter.com/obezumiya)
-- Discord: `1366453661970071633`
+**StreamFix nasceu como fork de [bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass)**, criado originalmente por **bezumiya** ([@obezumiya](https://twitter.com/obezumiya) no Twitter, `1366453661970071633` no Discord).
 
 ## Agradecimentos
 
@@ -413,7 +409,7 @@ desse trabalho.
 
 # English
 
-**GoLiveBypass** is an **Equicord/Vencord** plugin, made by a Brazilian developer, that **restores Go Live and camera for Brazilian Discord users**. Discord's region gate is evaluated once at voice-channel join, from the gateway WebSocket origin IP, and never re-evaluated mid-call, so that single socket is the only thing that needs to leave Brazil.
+**StreamFix** is an **Equicord/Vencord** plugin, made by a Brazilian developer, that **restores Go Live and camera for Brazilian Discord users**. Discord's region gate is evaluated once at voice-channel join, from the gateway WebSocket origin IP, and never re-evaluated mid-call, so that single socket is the only thing that needs to leave Brazil.
 
 The plugin routes exactly that. On startup it brings up a local SOCKS5 router and installs a PAC embedded in a `data:` URL — no server, no file, no fetch — that sends only `gateway.discord.gg` to the router; every other host keeps whatever rule the system already had, read from `resolveProxy` beforehand. Startup costs milliseconds, so the exit is chosen afterwards, in parallel with Discord loading, instead of holding the whole boot. A gateway connection that arrives before an exit exists waits at the local router for up to 12 seconds while the rest of the app loads at full speed.
 
@@ -429,7 +425,7 @@ It was written after Brazil's data protection authority (ANPD) [ordered Discord 
 - Free proxies are ranked by the `alive` / `uptime` / `timeout` metadata the list already returns, and port 4145 is dropped (measured 14/14 TLS interception).
 - Free proxies are weak for anonymity, and whoever runs the exit sees your gateway traffic. Your own machine abroad (`ssh -D 1080`, then `socks5://127.0.0.1:1080`) is the option with nobody else in the middle. Tor is the next best.
 - It cannot leave you unable to open Discord: the local router falls back to a direct connection if the exit fails or takes too long, the PAC keeps the system rule as its last resort, and nothing outside `gateway.discord.gg` is touched at all.
-- Install: copy the `goLiveBypass` folder into `src/userplugins/` of your Equicord or Vencord clone, then `pnpm install && pnpm build && pnpm inject`, fully restart Discord, and enable **GoLiveBypass** in plugin settings.
-- Made by **bezumiya** — [GitHub](https://github.com/bezumiya/GoLiveBypass), [Twitter](https://twitter.com/obezumiya), Discord `1366453661970071633`.
+- Install: copy the `streamFix` folder into `src/userplugins/` of your Equicord or Vencord clone, then `pnpm install && pnpm build && pnpm inject`, fully restart Discord, and enable **StreamFix** in plugin settings.
+- StreamFix started as a fork of **[bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass)**, created by bezumiya ([Twitter](https://twitter.com/obezumiya), Discord `1366453661970071633`).
 - Thanks to **[Vithor](https://github.com/Vith0r)** for the installer: he wrote the first GoLiveBypass installer on his own and showed that the whole setup could be automated in a single script.
 - License: GPL-3.0-or-later.
