@@ -12,9 +12,7 @@ set "GLB_TMP=%~dp0StreamFix-Installer.ps1.tmp"
 rem Fixo num commit especifico, nao "main": evita execucao remota de codigo via um push nao
 rem revisado. TEM QUE ser um commit onde o .ps1 baixado ja tenha o RepoRaw dele proprio fixo,
 rem senao reabre o mesmo buraco um passo adiante. Bump faz parte de cortar release nova.
-rem O path abaixo aponta pro nome que o arquivo tinha naquele commit pinado (GoLiveBypass),
-rem nao pro nome atual -- por isso nao muda so por causa deste rename.
-set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/0811e86/installer/GoLiveBypass-Installer.ps1"
+set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/04a0d03/installer/StreamFix-Installer.ps1"
 
 rem Sempre para um arquivo temporario, nunca por cima do que ja existe -- senao uma correcao
 rem de bug nunca chega em quem ja tem um .ps1 velho e quebrado do lado deste .bat.
@@ -29,10 +27,10 @@ set "GLB_DL_OK=0"
 if %ERRORLEVEL% EQU 0 if exist "%GLB_TMP%" (
     for %%A in ("%GLB_TMP%") do if %%~zA GTR 0 set "GLB_DL_OK=1"
 )
-rem O texto buscado e o header do commit pinado acima (ainda "GoLiveBypass"), nao do arquivo
-rem local -- muda junto se o GLB_URL acima for atualizado para um commit pos-rename.
+rem O texto buscado e o header do commit pinado acima, nao do arquivo local -- muda junto se o
+rem GLB_URL acima for atualizado para outro commit.
 if "%GLB_DL_OK%"=="1" (
-    findstr /c:"GoLiveBypass - instalador automatico" "%GLB_TMP%" >nul || set "GLB_DL_OK=0"
+    findstr /c:"StreamFix - instalador automatico" "%GLB_TMP%" >nul || set "GLB_DL_OK=0"
 )
 
 if "%GLB_DL_OK%"=="1" (

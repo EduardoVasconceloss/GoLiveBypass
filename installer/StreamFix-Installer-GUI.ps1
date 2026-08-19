@@ -22,11 +22,9 @@ Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
 # Mesmo commit fixo que installer/StreamFix-Installer.ps1 usa (ver o comentario de $RepoRaw
-# la). Nesse commit pinado o arquivo ainda se chamava GoLiveBypass-Installer.ps1 -- o path
-# abaixo aponta pro nome que ele tinha naquele commit, nao pro nome atual do arquivo local.
-# Bump faz parte de cortar release nova, junto com o pin do .ps1/.bat e os dois .exe.
-$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/0811e86'
-$CoreUrl = "$CoreRepoRaw/installer/GoLiveBypass-Installer.ps1"
+# la). Bump faz parte de cortar release nova, junto com o pin do .ps1/.bat e os dois .exe.
+$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/04a0d03'
+$CoreUrl = "$CoreRepoRaw/installer/StreamFix-Installer.ps1"
 
 function Resolve-CoreScript {
     if ($PSScriptRoot) {
