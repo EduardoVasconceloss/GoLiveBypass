@@ -14,7 +14,7 @@ rem revisado. TEM QUE ser um commit onde o .ps1 baixado ja tenha o RepoRaw dele 
 rem senao reabre o mesmo buraco um passo adiante. Bump faz parte de cortar release nova.
 rem O path abaixo aponta pro nome que o arquivo tinha naquele commit pinado (GoLiveBypass),
 rem nao pro nome atual -- por isso nao muda so por causa deste rename.
-set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/0811e86/installer/GoLiveBypass-Installer.ps1"
+set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/0811e86/installer/GoLiveBypass-Installer.ps1"
 
 rem Sempre para um arquivo temporario, nunca por cima do que ja existe -- senao uma correcao
 rem de bug nunca chega em quem ja tem um .ps1 velho e quebrado do lado deste .bat.
