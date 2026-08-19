@@ -321,9 +321,24 @@ function Install-Toolchain($needGit) {
             & winget install --id $id --accept-source-agreements --accept-package-agreements --silent
         }
 
-        Write-Host ''
-        Write-Warn 'Feche este terminal, abra outro e rode o instalador de novo para o PATH atualizar.'
-        exit 0
+        # O winget grava o PATH novo no registro (Machine/User), e da pra reler isso no mesmo
+        # processo sem reabrir o terminal -- e a mesma tecnica ja usada pra pegar o pnpm
+        # recem-instalado logo abaixo. Antes o instalador sempre pedia pra fechar e abrir de
+        # novo aqui, e como este mesmo Install-Toolchain roda de novo mais adiante no fluxo
+        # (para o mod, e depois para o resto), isso virava um ciclo de fechar/reabrir varias
+        # vezes numa instalacao do zero. So pede reabrir se, mesmo depois de reler, a
+        # ferramenta continuar faltando -- caso raro de instalador do winget que precisa
+        # mesmo de uma sessao nova.
+        Update-PathFromEnvironment
+        $stillMissing = $missing | Where-Object { -not (Test-Tool $_) }
+
+        if ($stillMissing.Count -gt 0) {
+            Write-Host ''
+            Write-Warn "Ainda faltando depois de instalar: $($stillMissing -join ', '). Feche este terminal, abra outro e rode o instalador de novo."
+            exit 0
+        }
+
+        Write-Ok 'Instalado. Seguindo sem precisar reabrir o terminal.'
     }
 
     if (Test-Pnpm) { return }
