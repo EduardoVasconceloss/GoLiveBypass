@@ -26,7 +26,7 @@ Add-Type -AssemblyName System.Drawing
 # branch a qualquer momento, e um commit especifico e imutavel. Atualizar isto para o HEAD
 # atual faz parte de cortar uma release nova do instalador, junto com o pin do .ps1/.bat e a
 # recompilacao dos dois .exe.
-$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/217fda8'
+$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/ad8d604'
 $CoreUrl = "$CoreRepoRaw/installer/GoLiveBypass-Installer.ps1"
 
 function Resolve-CoreScript {
