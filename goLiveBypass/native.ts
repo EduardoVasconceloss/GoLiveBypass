@@ -862,17 +862,38 @@ export async function enable(_?: IpcMainInvokeEvent) {
 
     try {
         // A regra do sistema e lida antes de qualquer coisa, para o PAC saber para onde mandar
-        // tudo que nao e Discord.
+        // tudo que nao e Discord. So da para embutir UMA regra fixa no PAC, e um PAC ou
+        // auto-detect de verdade pode escolher rotas diferentes por host (proxy corporativo,
+        // DLP). Resolver so DISCORD_HOST e usar essa regra para TODO o resto seria plausivel
+        // de estar errado bem ali. Resolver um segundo host de Discord que fica fora da lista
+        // roteada (a CDN, que carrega anexos e emojis o tempo todo) e comparar detecta o caso
+        // host-dependente: se as duas respostas baterem, a regra do sistema provavelmente e
+        // fixa (proxy unico ou DIRECT) e reaplicar ela em todo mundo e seguro. Se divergirem,
+        // e mais honesto nao mexer em nada do que arriscar desviar trafego que o proxy
+        // corporativo tratava diferente por destino.
         try {
-            const resolved = await session.defaultSession.resolveProxy(`https://${DISCORD_HOST}`);
-            if (typeof resolved === "string" && resolved.trim() !== "") fallbackRule = resolved.trim();
+            const [discordRule, cdnRule] = await Promise.all([
+                session.defaultSession.resolveProxy(`https://${DISCORD_HOST}`),
+                session.defaultSession.resolveProxy("https://cdn.discordapp.com")
+            ]);
+
+            if (typeof discordRule === "string" && discordRule.trim() !== "") {
+                if (typeof cdnRule === "string" && cdnRule.trim() !== "" && cdnRule.trim() !== discordRule.trim()) {
+                    log("a regra do sistema varia por host (proxy corporativo ou PAC de verdade); nao vou arriscar substituir por uma regra fixa");
+                    return { success: false as const };
+                }
+
+                fallbackRule = discordRule.trim();
+            }
         } catch {
             // fica em DIRECT
         }
 
         // Subir o roteador leva milissegundos, entao ele esta de pe antes do gateway nascer.
         // Escolher a saida acontece depois, em paralelo com o app carregando.
-        await startRouter(routesLogin() ? "login" : "gateway");
+        const started = await startRouter(routesLogin() ? "login" : "gateway");
+        if (!started) return { success: false as const };
+
         chooseExit();
         return { success: true as const };
     } catch {
