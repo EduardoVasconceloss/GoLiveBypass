@@ -30,27 +30,27 @@ jobs:
         shell: pwsh
         run: Install-Module -Name ps2exe -Force -Scope CurrentUser
 
-      - name: Compile GoLiveBypass-Installer.exe (terminal)
+      - name: Compile StreamFix-Installer.exe (terminal)
         shell: pwsh
         run: |
           Invoke-ps2exe `
-            -inputFile "installer/GoLiveBypass-Installer.ps1" `
-            -outputFile "installer/GoLiveBypass-Installer.exe" `
-            -title "GoLiveBypass Installer" `
-            -description "Instala o GoLiveBypass no Equicord ou Vencord (terminal)" `
-            -product "GoLiveBypass" `
+            -inputFile "installer/StreamFix-Installer.ps1" `
+            -outputFile "installer/StreamFix-Installer.exe" `
+            -title "StreamFix Installer" `
+            -description "Instala o StreamFix no Equicord ou Vencord (terminal)" `
+            -product "StreamFix" `
             -version "1.0.0.0"
 
-      - name: Compile GoLiveBypass-Installer-GUI.exe
+      - name: Compile StreamFix-Installer-GUI.exe
         shell: pwsh
         run: |
           Invoke-ps2exe `
-            -inputFile "installer/GoLiveBypass-Installer-GUI.ps1" `
-            -outputFile "installer/GoLiveBypass-Installer-GUI.exe" `
+            -inputFile "installer/StreamFix-Installer-GUI.ps1" `
+            -outputFile "installer/StreamFix-Installer-GUI.exe" `
             -noConsole `
-            -title "GoLiveBypass Installer (GUI)" `
-            -description "Instala o GoLiveBypass no Equicord ou Vencord, com janela" `
-            -product "GoLiveBypass" `
+            -title "StreamFix Installer (GUI)" `
+            -description "Instala o StreamFix no Equicord ou Vencord, com janela" `
+            -product "StreamFix" `
             -version "1.0.0.0"
 
       # TODO (apos aprovacao no SignPath Foundation ou programa equivalente): assinar os dois
@@ -59,7 +59,7 @@ jobs:
       - name: Hash the built exes
         shell: pwsh
         run: |
-          $files = "installer/GoLiveBypass-Installer.exe", "installer/GoLiveBypass-Installer-GUI.exe"
+          $files = "installer/StreamFix-Installer.exe", "installer/StreamFix-Installer-GUI.exe"
           $files | ForEach-Object {
             "$((Get-FileHash $_ -Algorithm SHA256).Hash)  $(Split-Path -Leaf $_)"
           } | Set-Content "installer/SHA256SUMS.txt"
@@ -68,10 +68,10 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: golivebypass-installer-exe
+          name: streamfix-installer-exe
           path: |
-            installer/GoLiveBypass-Installer.exe
-            installer/GoLiveBypass-Installer-GUI.exe
+            installer/StreamFix-Installer.exe
+            installer/StreamFix-Installer-GUI.exe
             installer/SHA256SUMS.txt
 
       - name: Attach to release
@@ -83,6 +83,6 @@ jobs:
           tag="${{ inputs.tag }}"
           if [ -z "$tag" ]; then tag="${GITHUB_REF#refs/tags/}"; fi
           gh release upload "$tag" \
-            installer/GoLiveBypass-Installer.exe \
-            installer/GoLiveBypass-Installer-GUI.exe \
+            installer/StreamFix-Installer.exe \
+            installer/StreamFix-Installer-GUI.exe \
             --clobber
