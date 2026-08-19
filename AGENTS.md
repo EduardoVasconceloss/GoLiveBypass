@@ -2,7 +2,7 @@
 
 ### Issue tracker
 
-Issues vivem no GitHub (`EduardoVasconceloss/GoLiveBypass`), via `gh` CLI. See `docs/agents/issue-tracker.md`.
+Issues vivem no GitHub (`EduardoVasconceloss/StreamFix`), via `gh` CLI. See `docs/agents/issue-tracker.md`.
 
 ### Triage labels
 
