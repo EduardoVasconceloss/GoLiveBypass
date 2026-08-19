@@ -24,7 +24,14 @@ param(
 
     [string] $Source = '',
 
-    [switch] $Yes
+    [switch] $Yes,
+
+    # Para a GUI (GoLiveBypass-Installer-GUI.ps1) carregar so as funcoes deste arquivo via
+    # dot-sourcing, sem disparar o menu de terminal sozinho. A GUI redefine as funcoes de
+    # interface (Write-Step, Select-Proxy, Confirm-Action etc.) depois de carregar este
+    # arquivo, e chama Invoke-Install/Invoke-Uninstall/etc. direto -- o motor de instalacao
+    # (clonar, compilar, injetar, Tor) e o mesmo, testado, dos dois jeitos.
+    [switch] $NoAutoRun
 )
 
 $ErrorActionPreference = 'Stop'
@@ -1046,19 +1053,21 @@ function Show-MainMenu {
     }
 }
 
-Show-Banner
+if (-not $NoAutoRun) {
+    Show-Banner
 
-try {
-    switch ($Mode) {
-        'Install' { Invoke-Install (Find-Checkout) }
-        'Uninstall' { Invoke-Uninstall }
-        'Restore' { Invoke-RestoreEverything }
-        default { Show-MainMenu }
+    try {
+        switch ($Mode) {
+            'Install' { Invoke-Install (Find-Checkout) }
+            'Uninstall' { Invoke-Uninstall }
+            'Restore' { Invoke-RestoreEverything }
+            default { Show-MainMenu }
+        }
+    } catch {
+        Write-Host ''
+        Write-Err $_.Exception.Message
+        exit 1
     }
-} catch {
-    Write-Host ''
-    Write-Err $_.Exception.Message
-    exit 1
-}
 
-Write-Host ''
+    Write-Host ''
+}
