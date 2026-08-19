@@ -612,6 +612,160 @@ function Select-Target($root) {
     }
 }
 
+# =============================================================================== tor local
+#
+# O gateway fica fixado numa saida so, para sempre, enquanto a sessao dura (e assim que o
+# roteamento por host do plugin funciona). Uma proxy gratuita que degrade no meio do caminho
+# --- sem cair de vez, so travando --- deixa o WebSocket do gateway meio-morto: quem assiste
+# para de receber os eventos de "fulano comecou a transmitir" ate alguem dar Ctrl+R. O Tor
+# nao elimina esse risco, mas e ordens de grandeza mais estavel que uma lista de proxy publica
+# desconhecida, e o circuito de uma conexao ja aberta nao muda no meio do caminho.
+#
+# Sem bridge nem pluggable transport: eles servem para atravessar rede onde a propria rede
+# Tor esta bloqueada, que nao e o caso do Brasil hoje. O que esta bloqueado e so o Go Live do
+# Discord. Bridge seria complexidade a mais (baixar meek-client.exe, manter uma linha de
+# bridge que pode expirar) sem ganho nenhum pra esse cenario.
+
+$TorRoot = Join-Path $env:LOCALAPPDATA 'GoLiveBypass\Tor'
+$TorExe = Join-Path $TorRoot 'tor\tor.exe'
+$TorRc = Join-Path $TorRoot 'torrc'
+$TorSocksPort = 9050
+
+function Test-PortOpen($port, $timeoutMs = 500) {
+    $client = New-Object System.Net.Sockets.TcpClient
+    try {
+        $result = $client.BeginConnect('127.0.0.1', $port, $null, $null)
+        return ($result.AsyncWaitHandle.WaitOne($timeoutMs) -and $client.Connected)
+    } catch {
+        return $false
+    } finally {
+        $client.Close()
+    }
+}
+
+function Get-LatestTorVersion {
+    $html = (Invoke-WebRequest -UseBasicParsing -Uri 'https://dist.torproject.org/torbrowser/').Content
+
+    # So versoes totalmente numericas (15.0.20): pastas com letra sao pre-lancamento (16.0a9),
+    # e um alpha instavel e pior que a proxy gratuita que estamos tentando substituir.
+    $versions = [regex]::Matches($html, 'href="(\d+\.\d+\.\d+)/"') | ForEach-Object { $_.Groups[1].Value }
+    if (-not $versions) { throw 'Nao consegui achar uma versao do Tor pra baixar.' }
+
+    return ($versions | Sort-Object { [version]$_ } | Select-Object -Last 1)
+}
+
+function Start-TorDaemon {
+    if (-not (Test-Path -LiteralPath $TorExe)) { return $false }
+    if (Test-PortOpen $TorSocksPort) { return $true }
+
+    Start-Process -FilePath $TorExe -ArgumentList @('-f', $TorRc) -WorkingDirectory $TorRoot -WindowStyle Hidden
+
+    # O SOCKS listener abre quase na hora, bem antes do Tor terminar de montar os primeiros
+    # circuitos (medido: listener de pe no mesmo segundo, bootstrap 100% uns 15s depois). Nao
+    # precisamos esperar o bootstrap inteiro aqui, so confirmar que a porta respondeu.
+    for ($i = 0; $i -lt 20; $i++) {
+        if (Test-PortOpen $TorSocksPort) { return $true }
+        Start-Sleep -Milliseconds 500
+    }
+
+    return $false
+}
+
+# So para a sessao atual: sem isso, o Tor so voltaria a existir na proxima vez que alguem
+# rodasse o instalador. Tarefa Agendada seria o jeito "oficial", mas Register-ScheduledTask
+# (e ate o schtasks.exe cru, testado direto) deu "Acesso negado" numa conta administradora
+# comum, sem elevar nada -- alguma politica ou software de seguranca bloqueia a criacao de
+# tarefa mesmo sem precisar de admin. Um atalho na pasta Inicializar do proprio usuario e um
+# simples arquivo, sem precisar de nenhum servico do Windows, e funciona onde a Tarefa
+# Agendada nao funcionou.
+function Register-TorAutostart {
+    try {
+        $startup = [Environment]::GetFolderPath('Startup')
+        $vbsPath = Join-Path $TorRoot 'start-hidden.vbs'
+        $shortcutPath = Join-Path $startup 'GoLiveBypass Tor.lnk'
+
+        # wscript.exe nao abre janela nenhuma, e Run(...,0,...) pede janela escondida para o
+        # processo filho -- e assim que o tor.exe sobe sem nem um pisca de console no login.
+        # VBScript nao trata "\" como escape (path do Windows entra cru), so "\"\"" precisa
+        # virar "" (aspas dobradas) para sobreviver dentro de outra string. Montado com
+        # concatenacao de strings de aspas simples em vez de escapar tudo numa string so, que
+        # e ilegivel e facil de errar a contagem de aspas.
+        $runLine = 'shell.Run """' + $TorExe + '"" -f ""' + $TorRc + '""", 0, False'
+        $vbsLines = @(
+            'Set shell = CreateObject("WScript.Shell")'
+            $runLine
+        )
+        Save-Text $vbsPath ($vbsLines -join "`n")
+
+        $shell = New-Object -ComObject WScript.Shell
+        $shortcut = $shell.CreateShortcut($shortcutPath)
+        $shortcut.TargetPath = 'wscript.exe'
+        $shortcut.Arguments = "`"$vbsPath`""
+        $shortcut.WorkingDirectory = $TorRoot
+        $shortcut.Description = 'Sobe o Tor local do GoLiveBypass antes do Discord abrir.'
+        $shortcut.Save()
+
+        return $true
+    } catch {
+        Write-Warn "Nao consegui deixar o Tor iniciando sozinho no login: $($_.Exception.Message)"
+        Write-Host '  Vai continuar funcionando nesta sessao; para as proximas, rode o instalador de novo.' -ForegroundColor DarkGray
+        return $false
+    }
+}
+
+function Install-TorDaemon {
+    if (Test-PortOpen $TorSocksPort) {
+        Write-Ok 'Ja tem um Tor rodando na porta 9050, nada para instalar.'
+        return $true
+    }
+
+    if (Test-Path -LiteralPath $TorExe) {
+        Write-Step 'Tor ja baixado, so iniciando'
+        if (Start-TorDaemon) {
+            Register-TorAutostart | Out-Null
+            return $true
+        }
+        Write-Warn 'O Tor nao respondeu na porta 9050 a tempo.'
+        return $false
+    }
+
+    if (-not (Test-Tool 'tar')) {
+        throw 'Falta o tar.exe (vem com o Windows 10 versao 1803 ou mais nova). Atualize o Windows, ou use Proxy minha com um Tor instalado a mao.'
+    }
+
+    Write-Step 'Descobrindo a versao mais recente do Tor'
+    $version = Get-LatestTorVersion
+    $archiveUrl = "https://dist.torproject.org/torbrowser/$version/tor-expert-bundle-windows-x86_64-$version.tar.gz"
+    $archivePath = Join-Path $env:TEMP "tor-expert-bundle-$version.tar.gz"
+
+    Write-Step "Baixando o Tor $version (uns 20 MB)"
+    Invoke-WebRequest -UseBasicParsing -Uri $archiveUrl -OutFile $archivePath
+
+    New-Item -ItemType Directory -Path $TorRoot -Force | Out-Null
+    Write-Step 'Extraindo'
+    & tar -xzf $archivePath -C $TorRoot
+    Remove-Item -LiteralPath $archivePath -Force -ErrorAction SilentlyContinue
+
+    if (-not (Test-Path -LiteralPath $TorExe)) { throw 'O pacote baixado do Tor nao trouxe o tor.exe esperado.' }
+
+    # O parser do torrc trata "\" dentro de aspas como escape de string C ("\U" nao e valido),
+    # entao um DataDirectory absoluto do Windows entre aspas quebra com "Invalid escape
+    # sequence". Barra normal funciona em qualquer path no Windows e nao tem esse problema.
+    $dataDir = (Join-Path $TorRoot 'data') -replace '\\', '/'
+    $torrcLines = @(
+        "SocksPort 127.0.0.1:$TorSocksPort"
+        "DataDirectory `"$dataDir`""
+        'AvoidDiskWrites 1'
+    )
+    Save-Text $TorRc ($torrcLines -join "`n")
+
+    if (-not (Start-TorDaemon)) { throw 'O Tor nao respondeu na porta 9050 a tempo depois de instalado.' }
+
+    Register-TorAutostart | Out-Null
+    Write-Ok 'Tor instalado e rodando. Vai subir sozinho a cada login, antes do Discord abrir.'
+    return $true
+}
+
 function Select-Proxy {
     if ($Yes) { return '' }
 
@@ -620,14 +774,17 @@ function Select-Proxy {
     Write-Host ''
     Write-Host '    [1] Proxy gratuita, escolhida e testada sozinha' -ForegroundColor Green
     Write-Host '        Nao precisa instalar nada. O plugin testa varias e usa a que passar.' -ForegroundColor DarkGray
-    Write-Host '    [2] Tor local' -ForegroundColor Cyan
-    Write-Host '        Mais confiavel e mais rapido, mas voce precisa ter o Tor rodando.' -ForegroundColor DarkGray
+    Write-Host '    [2] Tor (instalo e deixo rodando sozinho)' -ForegroundColor Cyan
+    Write-Host '        Bem mais estavel que proxy gratuita. Baixo e configuro o Tor puro, sem navegador.' -ForegroundColor DarkGray
     Write-Host '    [3] Proxy minha' -ForegroundColor Cyan
     Write-Host '        Voce informa o endereco, no formato socks5://host:porta.' -ForegroundColor DarkGray
     Write-Host ''
 
     switch (Read-Host '  Escolha') {
-        '2' { return 'socks5://127.0.0.1:9150' }
+        '2' {
+            if (-not (Install-TorDaemon)) { throw 'Nao consegui deixar o Tor pronto. Tente de novo, ou use outra opcao.' }
+            return ''
+        }
         '3' {
             $manual = (Read-Host '  Endereco da proxy').Trim()
             if ($manual -notmatch '^(socks5|https?)://[a-z0-9.-]{1,253}:\d{1,5}$') {
