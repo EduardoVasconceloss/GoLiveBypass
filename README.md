@@ -132,14 +132,14 @@ Rotear só um host muda o pior caso. Uma saída ruim agora atinge uma conexão, 
 
 Um script encontra sozinho o Equicord ou o Vencord que você tem, instala o plugin, compila e injeta. Se você não tiver nenhum dos dois, ele pergunta qual você quer e instala junto.
 
-**Windows, jeito mais simples:** baixe o [`GoLiveBypass-Installer.bat`](installer/GoLiveBypass-Installer.bat) e dê dois cliques. Ele libera a execução só para aquele processo (`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`), baixa o `.ps1` se ele não estiver do lado, e roda tudo.
+**Windows, jeito mais simples:** baixe o [`StreamFix-Installer.bat`](installer/StreamFix-Installer.bat) e dê dois cliques. Ele libera a execução só para aquele processo (`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`), baixa o `.ps1` se ele não estiver do lado, e roda tudo.
 
 **Linux:**
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/golivebypass-installer.sh
-chmod +x golivebypass-installer.sh
-./golivebypass-installer.sh
+curl -fsSLO https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/streamfix-installer.sh
+chmod +x streamfix-installer.sh
+./streamfix-installer.sh
 ```
 
 Ao abrir, ele mostra o que encontrou e um menu:
@@ -153,7 +153,7 @@ Ao abrir, ele mostra o que encontrou e um menu:
 
   O que voce quer fazer?
 
-    [1] Instalar ou atualizar o GoLiveBypass
+    [1] Instalar ou atualizar o StreamFix
     [2] Remover so o plugin (o mod continua)
     [3] Restaurar tudo (remove o plugin e desfaz a injecao)
     [0] Sair
@@ -164,8 +164,8 @@ Escolhendo instalar, ele pergunta três coisas: **onde** (usar o mod que já est
 **Pelo PowerShell:**
 
 ```powershell
-irm https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/GoLiveBypass-Installer.ps1 -OutFile GoLiveBypass-Installer.ps1
-powershell -ExecutionPolicy Bypass -File .\GoLiveBypass-Installer.ps1
+irm https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/StreamFix-Installer.ps1 -OutFile StreamFix-Installer.ps1
+powershell -ExecutionPolicy Bypass -File .\StreamFix-Installer.ps1
 ```
 
 Ele descobre onde está o seu checkout **lendo a própria injeção do Discord**: o instalador do Equicord e o do Vencord substituem o `app.asar` por um stub que faz `require` da pasta de build, e desse caminho dá para derivar a raiz do repositório. Se não achar por aí, procura nos lugares habituais.
@@ -182,21 +182,21 @@ A descoberta é automática e roda em milissegundos: primeiro lê a injeção do
 Outros modos:
 
 ```powershell
-.\GoLiveBypass-Installer.ps1 -Source C:\caminho\do\Equicord  # aponta o checkout na mão
-.\GoLiveBypass-Installer.ps1 -Mod Vencord                     # escolhe o mod sem a tela
-.\GoLiveBypass-Installer.ps1 -Yes                             # sem perguntas, para automação
-.\GoLiveBypass-Installer.ps1 -Mode Install                    # instala direto, sem menu
-.\GoLiveBypass-Installer.ps1 -Mode Uninstall                  # remove o plugin e recompila
-.\GoLiveBypass-Installer.ps1 -Mode Restore                    # remove o plugin e desfaz a injeção
+.\StreamFix-Installer.ps1 -Source C:\caminho\do\Equicord  # aponta o checkout na mão
+.\StreamFix-Installer.ps1 -Mod Vencord                     # escolhe o mod sem a tela
+.\StreamFix-Installer.ps1 -Yes                             # sem perguntas, para automação
+.\StreamFix-Installer.ps1 -Mode Install                    # instala direto, sem menu
+.\StreamFix-Installer.ps1 -Mode Uninstall                  # remove o plugin e recompila
+.\StreamFix-Installer.ps1 -Mode Restore                    # remove o plugin e desfaz a injeção
 ```
 
 ```bash
-./golivebypass-installer.sh --source ~/Equicord   # aponta o checkout na mão
-./golivebypass-installer.sh --mod vencord         # escolhe o mod sem a tela
-./golivebypass-installer.sh --yes                 # sem perguntas, para automação
-./golivebypass-installer.sh --install             # instala direto, sem menu
-./golivebypass-installer.sh --uninstall           # remove o plugin e recompila
-./golivebypass-installer.sh --restore             # remove o plugin e desfaz a injeção
+./streamfix-installer.sh --source ~/Equicord   # aponta o checkout na mão
+./streamfix-installer.sh --mod vencord         # escolhe o mod sem a tela
+./streamfix-installer.sh --yes                 # sem perguntas, para automação
+./streamfix-installer.sh --install             # instala direto, sem menu
+./streamfix-installer.sh --uninstall           # remove o plugin e recompila
+./streamfix-installer.sh --restore             # remove o plugin e desfaz a injeção
 ```
 
 O instalador **baixa o plugin direto deste repositório** em vez de carregar uma cópia embutida, então nunca instala uma versão defasada. Ele nunca mexe no `app.asar`: quem injeta é o instalador oficial do Equicord/Vencord.
@@ -383,9 +383,9 @@ goLiveBypass/
                                    #   registro e nova tentativa
 
 installer/
-├── GoLiveBypass-Installer.bat     # Windows: dois cliques, libera a execução e chama o .ps1
-├── GoLiveBypass-Installer.ps1     # Windows: instalador automático
-└── golivebypass-installer.sh      # Linux: mesmo instalador, mesmo menu
+├── StreamFix-Installer.bat        # Windows: dois cliques, libera a execução e chama o .ps1
+├── StreamFix-Installer.ps1        # Windows: instalador automático
+└── streamfix-installer.sh         # Linux: mesmo instalador, mesmo menu
 
 assets/
 └── instalacao.gif                 # o vídeo do começo deste README

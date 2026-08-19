@@ -1,14 +1,14 @@
 <#
-    GoLiveBypass - instalador com janela (GUI)
+    StreamFix - instalador com janela (GUI)
 
-    Faz exatamente o que o GoLiveBypass-Installer.ps1/.bat de terminal faz -- mesmo motor,
+    Faz exatamente o que o StreamFix-Installer.ps1/.bat de terminal faz -- mesmo motor,
     mesmas funcoes, mesmo Tor/pnpm/git por baixo -- so trocando as perguntas de terminal por
     uma tela com opcoes e um botao "Instalar", e o texto que rolava no console por uma caixa
     de log dentro da janela. Quem prefere ver tudo em texto puro continua usando o .bat ou o
     .ps1 direto; esta janela e so uma segunda forma de chegar no mesmo lugar.
 
     Uso:
-      .\GoLiveBypass-Installer-GUI.ps1
+      .\StreamFix-Installer-GUI.ps1
 #>
 
 [CmdletBinding()]
@@ -21,14 +21,16 @@ try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Mesmo commit fixo que installer/GoLiveBypass-Installer.ps1 usa (ver o comentario de $RepoRaw
-# la). Bump faz parte de cortar release nova, junto com o pin do .ps1/.bat e os dois .exe.
+# Mesmo commit fixo que installer/StreamFix-Installer.ps1 usa (ver o comentario de $RepoRaw
+# la). Nesse commit pinado o arquivo ainda se chamava GoLiveBypass-Installer.ps1 -- o path
+# abaixo aponta pro nome que ele tinha naquele commit, nao pro nome atual do arquivo local.
+# Bump faz parte de cortar release nova, junto com o pin do .ps1/.bat e os dois .exe.
 $CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/0811e86'
 $CoreUrl = "$CoreRepoRaw/installer/GoLiveBypass-Installer.ps1"
 
 function Resolve-CoreScript {
     if ($PSScriptRoot) {
-        $local = Join-Path $PSScriptRoot 'GoLiveBypass-Installer.ps1'
+        $local = Join-Path $PSScriptRoot 'StreamFix-Installer.ps1'
         if (Test-Path -LiteralPath $local) { return (Get-Content -LiteralPath $local -Raw) }
     }
 
@@ -40,7 +42,7 @@ function Resolve-CoreScript {
 }
 
 $coreContent = Resolve-CoreScript
-$coreTempPath = Join-Path $env:TEMP 'GoLiveBypass-Installer-Core.ps1'
+$coreTempPath = Join-Path $env:TEMP 'StreamFix-Installer-Core.ps1'
 [IO.File]::WriteAllText($coreTempPath, $coreContent, (New-Object Text.UTF8Encoding($false)))
 
 # Write-* viram no-op: nesta janela (-noConsole) nao ha console ouvindo Write-Host.
@@ -56,7 +58,7 @@ try { $detectedRoot = Find-Checkout } catch { $detectedRoot = $null }
 # =============================================================================== janela
 
 $form = New-Object System.Windows.Forms.Form
-$form.Text = 'GoLiveBypass'
+$form.Text = 'StreamFix'
 $form.Size = New-Object System.Drawing.Size(560, 560)
 $form.StartPosition = 'CenterScreen'
 $form.FormBorderStyle = 'FixedDialog'
@@ -64,7 +66,7 @@ $form.MaximizeBox = $false
 $form.Font = New-Object System.Drawing.Font('Segoe UI', 9)
 
 $titleLabel = New-Object System.Windows.Forms.Label
-$titleLabel.Text = 'GoLiveBypass'
+$titleLabel.Text = 'StreamFix'
 $titleLabel.Font = New-Object System.Drawing.Font('Segoe UI', 14, [System.Drawing.FontStyle]::Bold)
 $titleLabel.Location = New-Object System.Drawing.Point(20, 15)
 $titleLabel.AutoSize = $true
@@ -376,7 +378,7 @@ function Write-Warn($text) { Write-Information "WARN|$text" }
 function Write-Err($text) { Write-Information "ERR|$text" }
 
 function Confirm-Action($question) {
-    $result = [System.Windows.Forms.MessageBox]::Show($question, 'GoLiveBypass', [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
+    $result = [System.Windows.Forms.MessageBox]::Show($question, 'StreamFix', [System.Windows.Forms.MessageBoxButtons]::YesNo, [System.Windows.Forms.MessageBoxIcon]::Question)
     return $result -eq [System.Windows.Forms.DialogResult]::Yes
 }
 
@@ -422,7 +424,7 @@ function Start-Install {
     $manualProxy = $manualProxyBox.Text.Trim()
     if ($proxyChoice -eq 'manual') {
         if ($manualProxy -eq '' -or $manualProxy -eq 'socks5://host:porta' -or $manualProxy -notmatch '^(socks5|https?)://[a-z0-9.-]{1,253}:\d{1,5}$') {
-            [System.Windows.Forms.MessageBox]::Show('Endereco de proxy invalido. Use socks5://host:porta.', 'GoLiveBypass', 'OK', 'Warning') | Out-Null
+            [System.Windows.Forms.MessageBox]::Show('Endereco de proxy invalido. Use socks5://host:porta.', 'StreamFix', 'OK', 'Warning') | Out-Null
             return
         }
     }
@@ -430,7 +432,7 @@ function Start-Install {
     $optionsPage.Visible = $false
     $progressPage.Visible = $true
     $installButton.Visible = $false
-    $form.Text = 'GoLiveBypass -- instalando...'
+    $form.Text = 'StreamFix -- instalando...'
 
     $runspace = [runspacefactory]::CreateRunspace()
     $runspace.Open()
@@ -504,7 +506,7 @@ function Show-Done([string] $failure) {
     $closeButton.Visible = $true
 
     if ($failure) {
-        $form.Text = 'GoLiveBypass -- erro na instalacao'
+        $form.Text = 'StreamFix -- erro na instalacao'
         $doneIconLabel.Text = [char] 0x274C
         $doneIconLabel.ForeColor = [System.Drawing.Color]::Firebrick
         $doneTitleLabel.Text = 'Algo deu errado'
@@ -512,7 +514,7 @@ function Show-Done([string] $failure) {
         $doneLogBox.Visible = $true
         $doneLogBox.Text = $failure
     } else {
-        $form.Text = 'GoLiveBypass -- pronto'
+        $form.Text = 'StreamFix -- pronto'
         $doneIconLabel.Text = [char] 0x2705
         $doneIconLabel.ForeColor = [System.Drawing.Color]::ForestGreen
         $doneTitleLabel.Text = 'Pronto!'

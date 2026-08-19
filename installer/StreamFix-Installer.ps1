@@ -1,14 +1,14 @@
 <#
-    GoLiveBypass - instalador automatico
+    StreamFix - instalador automatico
 
     Encontra sozinho o Equicord ou o Vencord que voce tem, instala o plugin, compila e
     injeta. Se voce nao tiver nenhum dos dois, pergunta qual quer e instala junto.
 
     Uso:
-      .\GoLiveBypass-Installer.ps1
-      .\GoLiveBypass-Installer.ps1 -Source "C:\caminho\do\Equicord"
-      .\GoLiveBypass-Installer.ps1 -Mod Equicord -Yes
-      .\GoLiveBypass-Installer.ps1 -Mode Uninstall
+      .\StreamFix-Installer.ps1
+      .\StreamFix-Installer.ps1 -Source "C:\caminho\do\Equicord"
+      .\StreamFix-Installer.ps1 -Mod Equicord -Yes
+      .\StreamFix-Installer.ps1 -Mode Uninstall
 
     Obrigado ao Vithor (https://github.com/Vith0r), que escreveu o primeiro instalador do
     GoLiveBypass e abriu o caminho para este aqui.
@@ -52,7 +52,8 @@ foreach ($envVar in @('USERPROFILE', 'TEMP')) {
 # parte de cortar release nova (junto com a tag installer-vN e o .exe).
 $RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/3fee0e5'
 $PluginFiles = @('goLiveBypass/index.tsx', 'goLiveBypass/native.ts')
-$PluginDirName = 'goLiveBypass'
+$PluginDirName = 'streamFix'
+$LegacyPluginDirName = 'goLiveBypass'
 $DiscordNames = @('Discord', 'DiscordCanary', 'DiscordPTB')
 
 $Mods = @{
@@ -67,7 +68,7 @@ function Write-Err($text) { Write-Host "  [X] $text" -ForegroundColor Red }
 
 function Show-Banner {
     Write-Host ''
-    Write-Host '  GoLiveBypass' -ForegroundColor Cyan
+    Write-Host '  StreamFix' -ForegroundColor Cyan
     Write-Host '  Go Live e camera de volta no Discord' -ForegroundColor DarkGray
     Write-Host '  https://github.com/EduardoVasconceloss/GoLiveBypass (fork de bezumiya/GoLiveBypass)' -ForegroundColor DarkGray
     Write-Host ''
@@ -421,7 +422,7 @@ function Install-Mod($choice) {
     Write-Host '  Vou fazer:' -ForegroundColor White
     Write-Host "    1. Baixar o $($info.Label) em $target" -ForegroundColor DarkGray
     Write-Host '    2. Instalar as dependencias' -ForegroundColor DarkGray
-    Write-Host '    3. Compilar junto com o GoLiveBypass' -ForegroundColor DarkGray
+    Write-Host '    3. Compilar junto com o StreamFix' -ForegroundColor DarkGray
     Write-Host '    4. Injetar no Discord (o Discord vai fechar)' -ForegroundColor DarkGray
     Write-Host ''
     if (-not (Confirm-Action 'Pode seguir?')) { throw 'Cancelado.' }
@@ -459,6 +460,14 @@ function Stop-Discord {
 
 function Copy-Plugin($root) {
     $target = Join-Path $root "src\userplugins\$PluginDirName"
+    $legacy = Join-Path $root "src\userplugins\$LegacyPluginDirName"
+
+    # Evita pasta duplicada/orfa pra quem ja tinha o plugin instalado sob o nome antigo.
+    if ((Test-Path -LiteralPath $legacy) -and -not (Test-Path -LiteralPath $target)) {
+        Write-Step "Removendo a instalacao antiga do plugin em $legacy"
+        Remove-Item -LiteralPath $legacy -Recurse -Force
+    }
+
     Write-Step "Instalando o plugin em $target"
 
     if (-not (Test-Path -LiteralPath $target)) { New-Item -ItemType Directory -Path $target -Force | Out-Null }
@@ -521,6 +530,8 @@ function Invoke-Install($root) {
     # parametro 'Path' porque ele e uma cadeia de caracteres vazia" -- sem dizer o que faltou.
     if (-not $root) { throw 'Nao consegui determinar a pasta de instalacao. Tente de novo, ou aponte com -Source.' }
 
+    Remove-LegacyTor
+
     $proxy = Select-Proxy
     $permanent = Select-Persistence
 
@@ -556,7 +567,7 @@ function Invoke-Install($root) {
             Wait-DiscordExit $root
         } else {
             Write-Warn 'O Discord ja estava injetado antes de eu rodar, entao nao vou desfazer isso.'
-            Write-Host '  Para remover depois: .\GoLiveBypass-Installer.ps1 -Mode Uninstall' -ForegroundColor DarkGray
+            Write-Host '  Para remover depois: .\StreamFix-Installer.ps1 -Mode Uninstall' -ForegroundColor DarkGray
         }
     }
 }
@@ -626,7 +637,7 @@ function Set-PluginSettings($root, $proxy) {
         $backup = "$file.bak-$(Get-Date -Format yyyyMMdd-HHmmss)"
         Copy-Item -LiteralPath $file -Destination $backup -Force
         Write-Warn "Nao consegui ler $file, entao nao mexi nele. Copia em $backup"
-        Write-Warn 'Ative o GoLiveBypass na mao em Configuracoes > Plugins.'
+        Write-Warn 'Ative o StreamFix na mao em Configuracoes > Plugins.'
         return
     }
 
@@ -655,7 +666,7 @@ function Set-PluginSettings($root, $proxy) {
         Write-Step "Plugin ativado em $file"
     } else {
         Write-Warn "Nao consegui confirmar a escrita em $file"
-        Write-Host '  Ative o GoLiveBypass na mao em Configuracoes > Plugins.' -ForegroundColor DarkGray
+        Write-Host '  Ative o StreamFix na mao em Configuracoes > Plugins.' -ForegroundColor DarkGray
     }
 }
 
@@ -705,10 +716,33 @@ function Select-Target($root) {
 # so; uma proxy que degrada no meio deixa o WebSocket meio-morto). Sem bridge/pluggable
 # transport: e so o Go Live do Discord que esta bloqueado, nao a rede Tor em si no Brasil.
 
-$TorRoot = Join-Path $env:LOCALAPPDATA 'GoLiveBypass\Tor'
+$TorRoot = Join-Path $env:LOCALAPPDATA 'StreamFix\Tor'
+$LegacyTorRoot = Join-Path $env:LOCALAPPDATA 'GoLiveBypass\Tor'
 $TorExe = Join-Path $TorRoot 'tor\tor.exe'
 $TorRc = Join-Path $TorRoot 'torrc'
 $TorSocksPort = 9050
+
+# Limpa uma instalacao anterior do Tor sob o nome antigo (GoLiveBypass), atalho de autostart
+# incluso -- so remove; quem quiser o Tor de volta ganha um novo em $TorRoot na proxima vez
+# que escolher essa opcao.
+function Remove-LegacyTor {
+    if (-not (Test-Path -LiteralPath $LegacyTorRoot)) { return }
+
+    Write-Step 'Removendo a instalacao antiga do Tor (GoLiveBypass -> StreamFix)'
+
+    try {
+        $legacyExe = Join-Path $LegacyTorRoot 'tor\tor.exe'
+        Get-Process -Name 'tor' -ErrorAction SilentlyContinue |
+            Where-Object { $_.Path -and $_.Path.Equals($legacyExe, [StringComparison]::OrdinalIgnoreCase) } |
+            Stop-Process -Force -ErrorAction SilentlyContinue
+    } catch { }
+
+    $legacyShortcut = Join-Path ([Environment]::GetFolderPath('Startup')) 'GoLiveBypass Tor.lnk'
+    Remove-Item -LiteralPath $legacyShortcut -Force -ErrorAction SilentlyContinue
+
+    Start-Sleep -Milliseconds 300
+    Remove-Item -LiteralPath $LegacyTorRoot -Recurse -Force -ErrorAction SilentlyContinue
+}
 
 function Test-PortOpen($port, $timeoutMs = 500) {
     $client = New-Object System.Net.Sockets.TcpClient
@@ -745,9 +779,9 @@ $GitExeSha256 = '0cbc0b34a74b3aff3ace0910328549155a770e228331b19cb1498218a120e7f
 
 function Install-ToolDirect($tool) {
     $spec = if ($tool -eq 'git') {
-        @{ Url = $GitExeUrl; Sha256 = $GitExeSha256; File = 'GoLiveBypass-git-installer.exe' }
+        @{ Url = $GitExeUrl; Sha256 = $GitExeSha256; File = 'StreamFix-git-installer.exe' }
     } else {
-        @{ Url = $NodeMsiUrl; Sha256 = $NodeMsiSha256; File = 'GoLiveBypass-node-installer.msi' }
+        @{ Url = $NodeMsiUrl; Sha256 = $NodeMsiSha256; File = 'StreamFix-node-installer.msi' }
     }
 
     $installerPath = Join-Path $env:TEMP $spec.File
@@ -853,7 +887,7 @@ function Register-TorAutostart {
     try {
         $startup = [Environment]::GetFolderPath('Startup')
         $vbsPath = Join-Path $TorRoot 'start-hidden.vbs'
-        $shortcutPath = Join-Path $startup 'GoLiveBypass Tor.lnk'
+        $shortcutPath = Join-Path $startup 'StreamFix Tor.lnk'
 
         # wscript.exe + Run(...,0,...) sobe o tor.exe sem console nenhum no login. VBScript nao
         # escapa "\": aspas duplas precisam virar "" pra sobreviver dentro da string.
@@ -869,7 +903,7 @@ function Register-TorAutostart {
         $shortcut.TargetPath = 'wscript.exe'
         $shortcut.Arguments = "`"$vbsPath`""
         $shortcut.WorkingDirectory = $TorRoot
-        $shortcut.Description = 'Sobe o Tor local do GoLiveBypass antes do Discord abrir.'
+        $shortcut.Description = 'Sobe o Tor local do StreamFix antes do Discord abrir.'
         $shortcut.Save()
 
         return $true
@@ -946,12 +980,12 @@ function Install-TorDaemon {
     return $true
 }
 
-# So mexe no Tor que o proprio GoLiveBypass instalou (path exato), nunca num tor.exe de outra
+# So mexe no Tor que o proprio StreamFix instalou (path exato), nunca num tor.exe de outra
 # origem -- a pessoa pode ter Tor Browser aberto por outro motivo.
 function Remove-TorDaemon {
     if (-not (Test-Path -LiteralPath $TorRoot)) { return }
 
-    Write-Step 'Removendo o Tor que o GoLiveBypass instalou'
+    Write-Step 'Removendo o Tor que o StreamFix instalou'
 
     try {
         Get-Process -Name 'tor' -ErrorAction SilentlyContinue |
@@ -959,7 +993,7 @@ function Remove-TorDaemon {
             Stop-Process -Force -ErrorAction SilentlyContinue
     } catch { }
 
-    $shortcutPath = Join-Path ([Environment]::GetFolderPath('Startup')) 'GoLiveBypass Tor.lnk'
+    $shortcutPath = Join-Path ([Environment]::GetFolderPath('Startup')) 'StreamFix Tor.lnk'
     Remove-Item -LiteralPath $shortcutPath -Force -ErrorAction SilentlyContinue
 
     # Da um instante para o processo morto soltar o arquivo de lock antes de apagar a pasta.
@@ -1017,9 +1051,9 @@ function Select-Persistence {
 
 function Wait-DiscordExit($root) {
     Write-Host ''
-    Write-Ok 'Discord aberto com o GoLiveBypass.'
+    Write-Ok 'Discord aberto com o StreamFix.'
     Write-Warn 'Deixe esta janela aberta. Quando voce fechar o Discord, eu desfaco a injecao.'
-    Write-Host '  Se fechar esta janela antes, rode: .\GoLiveBypass-Installer.ps1 -Mode Uninstall' -ForegroundColor DarkGray
+    Write-Host '  Se fechar esta janela antes, rode: .\StreamFix-Installer.ps1 -Mode Uninstall' -ForegroundColor DarkGray
 
     try {
         # Esperar o Discord APARECER antes de esperar ele sumir. Sem isso, o Update.exe ainda
@@ -1078,7 +1112,7 @@ function Show-MainMenu {
 
     Write-Host '  O que voce quer fazer?' -ForegroundColor White
     Write-Host ''
-    Write-Host '    [1] Instalar ou atualizar o GoLiveBypass' -ForegroundColor Green
+    Write-Host '    [1] Instalar ou atualizar o StreamFix' -ForegroundColor Green
     Write-Host '    [2] Remover so o plugin (o mod continua)' -ForegroundColor Yellow
     Write-Host '    [3] Restaurar tudo (remove o plugin e desfaz a injecao)' -ForegroundColor Red
     Write-Host '    [0] Sair' -ForegroundColor Gray
@@ -1097,7 +1131,7 @@ if (-not $NoAutoRun) {
     # demais pra ler. So pausa quando NAO e -Yes -- automacao passa -Yes sem stdin pra responder.
     $logPath = $null
     try {
-        $logPath = Join-Path ([Environment]::GetFolderPath('Desktop')) "GoLiveBypass-log-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
+        $logPath = Join-Path ([Environment]::GetFolderPath('Desktop')) "StreamFix-log-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
         Start-Transcript -Path $logPath -Append | Out-Null
     } catch {
         $logPath = $null

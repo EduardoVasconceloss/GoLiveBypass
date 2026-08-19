@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
 #
-# GoLiveBypass - instalador automatico (Linux)
+# StreamFix - instalador automatico (Linux)
 #
 # Encontra sozinho o Equicord ou o Vencord que voce tem, instala o plugin, compila e injeta.
 # Se voce nao tiver nenhum dos dois, pergunta qual quer e instala junto.
 #
 # Uso:
-#   ./golivebypass-installer.sh
-#   ./golivebypass-installer.sh --source ~/Equicord
-#   ./golivebypass-installer.sh --mod vencord --yes
-#   ./golivebypass-installer.sh --uninstall
+#   ./streamfix-installer.sh
+#   ./streamfix-installer.sh --source ~/Equicord
+#   ./streamfix-installer.sh --mod vencord --yes
+#   ./streamfix-installer.sh --uninstall
 #
 # Obrigado ao Vithor (https://github.com/Vith0r), que escreveu o primeiro instalador do
 # GoLiveBypass e abriu o caminho para este aqui.
@@ -20,7 +20,8 @@ set -euo pipefail
 # parte de cortar release nova.
 REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/3fee0e5"
 PLUGIN_FILES=("goLiveBypass/index.tsx" "goLiveBypass/native.ts")
-PLUGIN_DIR_NAME="goLiveBypass"
+PLUGIN_DIR_NAME="streamFix"
+LEGACY_PLUGIN_DIR_NAME="goLiveBypass"
 EQUICORD_GIT="https://github.com/Equicord/Equicord"
 VENCORD_GIT="https://github.com/Vendicated/Vencord"
 
@@ -46,7 +47,7 @@ warn() { printf '  %s[!] %s%s\n' "$C_YELLOW" "$1" "$C_OFF" >&2; }
 fail() { printf '\n  %s[X] %s%s\n\n' "$C_RED" "$1" "$C_OFF" >&2; exit 1; }
 
 banner() {
-    printf '\n  %sGoLiveBypass%s\n' "$C_CYAN$C_BOLD" "$C_OFF"
+    printf '\n  %sStreamFix%s\n' "$C_CYAN$C_BOLD" "$C_OFF"
     printf '  %sGo Live e camera de volta no Discord%s\n' "$C_DIM" "$C_OFF"
     printf '  %shttps://github.com/EduardoVasconceloss/GoLiveBypass (fork de bezumiya/GoLiveBypass)%s\n\n' "$C_DIM" "$C_OFF"
 }
@@ -288,7 +289,7 @@ install_mod() {
     printf '\n  %sVou fazer:%s\n' "$C_BOLD" "$C_OFF" >&2
     printf '  %s  1. Baixar o %s em %s%s\n' "$C_DIM" "$choice" "$target" "$C_OFF" >&2
     printf '  %s  2. Instalar as dependencias%s\n' "$C_DIM" "$C_OFF" >&2
-    printf '  %s  3. Compilar junto com o GoLiveBypass%s\n' "$C_DIM" "$C_OFF" >&2
+    printf '  %s  3. Compilar junto com o StreamFix%s\n' "$C_DIM" "$C_OFF" >&2
     printf '  %s  4. Injetar no Discord (o Discord vai fechar)%s\n\n' "$C_DIM" "$C_OFF" >&2
     confirm "Pode seguir?" || fail "Cancelado."
 
@@ -339,6 +340,14 @@ stop_discord() {
 
 copy_plugin() {
     local root="$1" target="$1/src/userplugins/$PLUGIN_DIR_NAME" file
+    local legacy="$1/src/userplugins/$LEGACY_PLUGIN_DIR_NAME"
+
+    # Evita pasta duplicada/orfa pra quem ja tinha o plugin instalado sob o nome antigo.
+    if [ -d "$legacy" ] && [ ! -d "$target" ]; then
+        step "Removendo a instalacao antiga do plugin em $legacy"
+        rm -rf "$legacy"
+    fi
+
     step "Instalando o plugin em $target"
     mkdir -p "$target"
 
@@ -445,7 +454,7 @@ set_plugin_settings() {
         settings.plugins = settings.plugins || {};
         settings.plugins.GoLiveBypass = plugin;
         fs.writeFileSync(file, JSON.stringify(settings, null, 4));
-    ' && step "Plugin ativado em $file" || warn "Nao mexi no $file. Ative o GoLiveBypass na mao em Configuracoes > Plugins."
+    ' && step "Plugin ativado em $file" || warn "Nao mexi no $file. Ative o StreamFix na mao em Configuracoes > Plugins."
 }
 
 show_status() {
@@ -547,7 +556,7 @@ start_discord() {
 wait_discord_exit() {
     local root="$1"
     printf '\n'
-    ok "Discord aberto com o GoLiveBypass."
+    ok "Discord aberto com o StreamFix."
     warn "Deixe este terminal aberto. Quando voce fechar o Discord, eu desfaco a injecao."
 
     sleep 5
@@ -643,7 +652,7 @@ main_menu() {
     show_status "$root"
 
     printf '  %sO que voce quer fazer?%s\n\n' "$C_BOLD" "$C_OFF"
-    printf '    %s[1] Instalar ou atualizar o GoLiveBypass%s\n' "$C_GREEN" "$C_OFF"
+    printf '    %s[1] Instalar ou atualizar o StreamFix%s\n' "$C_GREEN" "$C_OFF"
     printf '    %s[2] Remover so o plugin (o mod continua)%s\n' "$C_YELLOW" "$C_OFF"
     printf '    %s[3] Restaurar tudo (remove o plugin e desfaz a injecao)%s\n' "$C_RED" "$C_OFF"
     printf '    [0] Sair\n\n'
