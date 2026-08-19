@@ -8,7 +8,7 @@ rem O caminho nunca e embutido: %~dp0 e resolvido na hora, entao funciona em pas
 rem espaco e com acento no nome de usuario.
 
 set "GLB_SCRIPT=%~dp0GoLiveBypass-Installer.ps1"
-set "GLB_URL=https://raw.githubusercontent.com/bezumiya/GoLiveBypass/main/installer/GoLiveBypass-Installer.ps1"
+set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main/installer/GoLiveBypass-Installer.ps1"
 
 if not exist "%GLB_SCRIPT%" (
     echo.
