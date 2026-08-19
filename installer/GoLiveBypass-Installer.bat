@@ -12,7 +12,7 @@ set "GLB_TMP=%~dp0GoLiveBypass-Installer.ps1.tmp"
 rem Fixo num commit especifico, nao "main": evita execucao remota de codigo via um push nao
 rem revisado. TEM QUE ser um commit onde o .ps1 baixado ja tenha o RepoRaw dele proprio fixo,
 rem senao reabre o mesmo buraco um passo adiante. Bump faz parte de cortar release nova.
-set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/ad8d604/installer/GoLiveBypass-Installer.ps1"
+set "GLB_URL=https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/430055f/installer/GoLiveBypass-Installer.ps1"
 
 rem Sempre para um arquivo temporario, nunca por cima do que ja existe -- senao uma correcao
 rem de bug nunca chega em quem ja tem um .ps1 velho e quebrado do lado deste .bat.
