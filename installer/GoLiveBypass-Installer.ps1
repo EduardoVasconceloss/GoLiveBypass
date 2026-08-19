@@ -147,7 +147,17 @@ function Test-Pnpm {
 function Update-PathFromEnvironment {
     $machine = [Environment]::GetEnvironmentVariable('Path', 'Machine')
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
-    $env:Path = @($machine, $user | Where-Object { $_ }) -join ';'
+    $fresh = @($machine, $user | Where-Object { $_ }) -join ';'
+
+    # Mescla no PATH atual do processo, nunca substitui: quem abre o instalador de dentro de um
+    # shell de dev, wrapper ou instalacao portatil pode ter git/node so ali, sem estar no
+    # registro (nem Machine nem User) -- substituir descartaria essas entradas e faria uma
+    # ferramenta que funciona perfeitamente parecer "faltando" (Install-Toolchain chama isto
+    # antes mesmo do primeiro Test-Tool). "-notcontains" e "-eq" comparam string sem diferenciar
+    # maiusculas/minusculas por padrao no PowerShell, o que já casa com paths do Windows.
+    $existing = @($env:Path -split ';' | Where-Object { $_ })
+    $newEntries = @($fresh -split ';' | Where-Object { $_ -and ($existing -notcontains $_) })
+    $env:Path = ($existing + $newEntries) -join ';'
 }
 
 function Test-ModCheckout($path) {
@@ -331,6 +341,15 @@ function Show-ModChoice {
 }
 
 function Install-Toolchain($needGit) {
+    # Quem instala o Node (ou o git) e so depois abre o instalador sem reiniciar o terminal --
+    # ou, pior, da so um duplo-clique no .exe pelo Explorer -- herda o PATH de quando o processo
+    # pai (cmd/PowerShell/explorer.exe) foi aberto, de antes do instalador do Node atualizar o
+    # registro. A ferramenta existe de verdade e aparece num terminal novo, mas Get-Command
+    # continua sem achar no processo atual. Reler o PATH do registro aqui, antes do primeiro
+    # Test-Tool, evita esse falso "nao encontrado" -- sem isso so o caminho do winget (que roda
+    # Update-PathFromEnvironment depois de instalar) corrigia o PATH.
+    Update-PathFromEnvironment
+
     $missing = @()
     if ($needGit -and -not (Test-Tool 'git')) { $missing += 'git' }
     if (-not (Test-Tool 'node')) { $missing += 'node' }
@@ -338,21 +357,32 @@ function Install-Toolchain($needGit) {
     if ($missing.Count -gt 0) {
         Write-Warn "Faltando no seu PATH: $($missing -join ', ')"
 
-        if (-not (Test-Tool 'winget')) {
-            throw "Instale $($missing -join ' e ') manualmente e rode de novo."
+        if (Test-Tool 'winget') {
+            if (-not (Confirm-Action 'Instalar agora com o winget?')) {
+                throw "Instale $($missing -join ' e ') e rode de novo."
+            }
+
+            foreach ($tool in $missing) {
+                $id = if ($tool -eq 'git') { 'Git.Git' } else { 'OpenJS.NodeJS.LTS' }
+                Write-Step "winget install $id"
+                Invoke-Native { winget install --id $id --accept-source-agreements --accept-package-agreements --silent }
+            }
+        } else {
+            # Sem winget (Windows sem a App Installer, imagem corporativa com sideload
+            # bloqueado etc.): cai pro instalador oficial de cada ferramenta, baixado e
+            # conferido por hash em Install-ToolDirect. So winget continua sendo o caminho
+            # padrao -- este e so o plano B para quem nao tem.
+            Write-Warn 'Sem winget nesta maquina.'
+            if (-not (Confirm-Action "Baixar e instalar $($missing -join ' e ') pelo instalador oficial de cada um?")) {
+                throw "Instale $($missing -join ' e ') manualmente e rode de novo."
+            }
+
+            foreach ($tool in $missing) {
+                Install-ToolDirect $tool
+            }
         }
 
-        if (-not (Confirm-Action 'Instalar agora com o winget?')) {
-            throw "Instale $($missing -join ' e ') e rode de novo."
-        }
-
-        foreach ($tool in $missing) {
-            $id = if ($tool -eq 'git') { 'Git.Git' } else { 'OpenJS.NodeJS.LTS' }
-            Write-Step "winget install $id"
-            Invoke-Native { winget install --id $id --accept-source-agreements --accept-package-agreements --silent }
-        }
-
-        # O winget grava o PATH novo no registro (Machine/User), e da pra reler isso no mesmo
+        # Winget e o instalador oficial gravam o PATH novo no registro (Machine/User), e da pra reler isso no mesmo
         # processo sem reabrir o terminal -- e a mesma tecnica ja usada pra pegar o pnpm
         # recem-instalado logo abaixo. Antes o instalador sempre pedia pra fechar e abrir de
         # novo aqui, e como este mesmo Install-Toolchain roda de novo mais adiante no fluxo
@@ -705,6 +735,58 @@ function Test-PortOpen($port, $timeoutMs = 500) {
 # exige repetir essa conferencia manual e faz parte de cortar uma release nova do instalador.
 $TorVersion = '15.0.20'
 $TorArchiveSha256 = 'd59bff934e3ad876e1623e24ae60c19aeea56f50178093b9f86fba230639f949'
+
+# Fallback para quem nao tem winget (Windows sem a App Installer, imagem corporativa com
+# sideload bloqueado etc.): baixa o instalador oficial de cada ferramenta direto do fabricante,
+# em vez de depender de um gerenciador de pacotes que pode nao existir. Mesma logica do Tor
+# acima -- versao e hash fixos, conferidos a mao contra a fonte oficial antes de publicar, nunca
+# "latest". Node: hash tirado de https://nodejs.org/dist/v$NodeVersion/SHASUMS256.txt. git: hash
+# tirado do corpo da release https://github.com/git-for-windows/git/releases/tag/$GitTag.
+# Trocar a versao aqui exige repetir essa conferencia e faz parte de cortar uma release nova.
+$NodeVersion = '24.19.0'
+$NodeMsiUrl = "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-x64.msi"
+$NodeMsiSha256 = 'f0f66c2a80c08a30a5ab5179ee9ea9e45f9b46289436a8cc87ff833b852db351'
+
+$GitTag = 'v2.55.0.windows.4'
+$GitExeVersion = '2.55.0.4'
+$GitExeUrl = "https://github.com/git-for-windows/git/releases/download/$GitTag/Git-$GitExeVersion-64-bit.exe"
+$GitExeSha256 = '0cbc0b34a74b3aff3ace0910328549155a770e228331b19cb1498218a120e7ff'
+
+function Install-ToolDirect($tool) {
+    $spec = if ($tool -eq 'git') {
+        @{ Url = $GitExeUrl; Sha256 = $GitExeSha256; File = 'GoLiveBypass-git-installer.exe' }
+    } else {
+        @{ Url = $NodeMsiUrl; Sha256 = $NodeMsiSha256; File = 'GoLiveBypass-node-installer.msi' }
+    }
+
+    $installerPath = Join-Path $env:TEMP $spec.File
+    Write-Step "Baixando o instalador oficial do $tool"
+    Invoke-WebRequest -UseBasicParsing -Uri $spec.Url -OutFile $installerPath
+
+    # Mesma ancora de confianca independente que o Tor usa: o hash fixo no script, conferido
+    # antes de publicar, nao um hash buscado agora do mesmo lugar que serviu o binario.
+    Write-Step 'Conferindo o hash do download'
+    $actualHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
+    if ($actualHash -ne $spec.Sha256) {
+        Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
+        throw "O hash do instalador do $tool baixado nao bate com o hash fixo no instalador. Abortando: o arquivo pode ter sido adulterado no caminho."
+    }
+
+    Write-Step "Instalando o $tool (instalador oficial, silencioso -- pode levar um minuto)"
+    # msiexec e o instalador do git (Inno Setup) voltam pro prompt na hora se so chamados com
+    # "&": precisam de Start-Process -Wait pra o resto do script esperar a instalacao terminar
+    # de verdade antes de conferir se a ferramenta ja aparece no PATH.
+    $proc = if ($tool -eq 'git') {
+        Start-Process -FilePath $installerPath -ArgumentList '/VERYSILENT', '/NORESTART', '/NOCANCEL', '/SP-', '/SUPPRESSMSGBOXES', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS' -Wait -PassThru
+    } else {
+        Start-Process -FilePath 'msiexec.exe' -ArgumentList '/i', "`"$installerPath`"", '/quiet', '/norestart' -Wait -PassThru
+    }
+    Remove-Item -LiteralPath $installerPath -Force -ErrorAction SilentlyContinue
+
+    if ($proc.ExitCode -ne 0) {
+        throw "O instalador do $tool terminou com codigo de erro $($proc.ExitCode)."
+    }
+}
 
 # Faz um CONNECT SOCKS5 de verdade ate um host HTTPS e autentica o TLS, igual o measure() do
 # native.ts. Um review adversarial apontou certo que confirmar so a porta TCP aberta nao prova
