@@ -731,9 +731,11 @@ function Start-TorDaemon {
         if (-not $portReady) { return $false }
     }
 
-    # O circuito real pode levar uns 15-20s para ficar pronto num boot frio: orcamento largo
-    # o bastante para cobrir isso, sondando a cada segundo em vez de esperar tudo de uma vez.
-    return Test-TorCircuit 30000
+    # O circuito real pode levar uns 15-20s para ficar pronto num boot frio, e testado na
+    # pratica um orcamento de 30s as vezes nao bastou (rede mais lenta, consenso do Tor
+    # demorando para chegar). 45s da folga sem deixar quem realmente nao tem Tor disponivel
+    # esperando por muito tempo.
+    return Test-TorCircuit 45000
 }
 
 # So para a sessao atual: sem isso, o Tor so voltaria a existir na proxima vez que alguem
@@ -779,9 +781,17 @@ function Register-TorAutostart {
 }
 
 function Install-TorDaemon {
+    # Nao basta a porta estar aberta: pode ser um Tor de outra origem ainda sem circuito
+    # pronto, ou o nosso proprio de uma execucao anterior travado. Start-TorDaemon confere
+    # trafego real (Test-TorCircuit) antes de devolver sucesso -- atalhar aqui so pela porta
+    # reabriria exatamente o buraco que aquela checagem existe para fechar.
     if (Test-PortOpen $TorSocksPort) {
-        Write-Ok 'Ja tem um Tor rodando na porta 9050, nada para instalar.'
-        return $true
+        Write-Step 'Ja tem algo escutando na porta 9050, confirmando que carrega trafego de verdade'
+        if (Start-TorDaemon) {
+            Write-Ok 'Tor ja estava rodando e respondendo, nada para instalar.'
+            return $true
+        }
+        Write-Warn 'Tem algo na porta 9050, mas nao parece um Tor funcional. Tentando reinstalar.'
     }
 
     if (Test-Path -LiteralPath $TorExe) {
