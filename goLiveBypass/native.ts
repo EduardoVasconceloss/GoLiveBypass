@@ -901,25 +901,34 @@ export async function enable(_?: IpcMainInvokeEvent) {
         // com logica por host?" diretamente -- mas e a melhor aproximacao disponivel, e se
         // divergirem e mais honesto nao mexer em nada do que arriscar desviar trafego que o
         // proxy corporativo tratava diferente por destino.
+        // Falha fechado: se o resolveProxy nao respondeu com uma regra confiavel -- lancou
+        // excecao, ou devolveu algo vazio/inesperado -- a versao anterior seguia em frente
+        // como se a regra fosse DIRECT. Numa maquina atras de proxy corporativo de verdade
+        // isso e o oposto do que devia acontecer: melhor nao ligar o bypass nesta sessao do
+        // que arriscar ignorar a politica da empresa por nao ter conseguido lê-la.
+        const probeUrls = [`https://${DISCORD_HOST}`, "https://cdn.discordapp.com", "https://www.google.com"];
+        let rules: (string | null)[];
         try {
-            const probeUrls = [`https://${DISCORD_HOST}`, "https://cdn.discordapp.com", "https://www.google.com"];
-            const rules = await Promise.all(probeUrls.map(url => session.defaultSession.resolveProxy(url)));
-
-            const discordRule = rules[0];
-            if (typeof discordRule === "string" && discordRule.trim() !== "") {
-                const trimmed = discordRule.trim();
-                const varies = rules.slice(1).some(rule => typeof rule === "string" && rule.trim() !== "" && rule.trim() !== trimmed);
-
-                if (varies) {
-                    log("a regra do sistema varia por host (proxy corporativo ou PAC de verdade); nao vou arriscar substituir por uma regra fixa");
-                    return { success: false as const };
-                }
-
-                fallbackRule = trimmed;
-            }
+            rules = await Promise.all(probeUrls.map(url => session.defaultSession.resolveProxy(url)));
         } catch {
-            // fica em DIRECT
+            log("nao consegui ler a regra de proxy do sistema; nao vou arriscar ligar o roteador as cegas");
+            return { success: false as const };
         }
+
+        const discordRule = rules[0];
+        if (typeof discordRule !== "string" || discordRule.trim() === "") {
+            log("o sistema nao devolveu uma regra de proxy usavel; nao vou arriscar ligar o roteador as cegas");
+            return { success: false as const };
+        }
+
+        const trimmed = discordRule.trim();
+        const varies = rules.slice(1).some(rule => typeof rule === "string" && rule.trim() !== "" && rule.trim() !== trimmed);
+        if (varies) {
+            log("a regra do sistema varia por host (proxy corporativo ou PAC de verdade); nao vou arriscar substituir por uma regra fixa");
+            return { success: false as const };
+        }
+
+        fallbackRule = trimmed;
 
         // Subir o roteador leva milissegundos, entao ele esta de pe antes do gateway nascer.
         // Escolher a saida acontece depois, em paralelo com o app carregando.
