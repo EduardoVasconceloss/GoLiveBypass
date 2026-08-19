@@ -822,7 +822,13 @@ function Select-Proxy {
     switch (Read-Host '  Escolha') {
         '2' {
             if (-not (Install-TorDaemon)) { throw 'Nao consegui deixar o Tor pronto. Tente de novo, ou use outra opcao.' }
-            return ''
+
+            # Devolver vazio aqui significaria "automatico" para o plugin, que prefere uma
+            # saida ja guardada no pote antes mesmo de tentar o Tor -- ai quem escolheu Tor
+            # explicitamente podia acabar saindo por uma proxy gratuita de uma instalacao
+            # anterior, sem aviso nenhum. O endereco explicito forca o plugin a usar
+            # exatamente o Tor que acabamos de deixar de pe.
+            return "socks5://127.0.0.1:$TorSocksPort"
         }
         '3' {
             $manual = (Read-Host '  Endereco da proxy').Trim()
