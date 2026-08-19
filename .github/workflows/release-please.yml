@@ -1,0 +1,24 @@
+name: release-please
+
+# Mantem um PR de release sempre atualizado (versao calculada a partir dos Conventional
+# Commits desde a ultima release + CHANGELOG.md gerado). Nada e lancado so por isso -- o
+# trigger de verdade e mergear esse PR, que faz esta mesma Action cortar a tag e a GitHub
+# Release. build-installer.yml reage a essa tag (v*) para compilar e anexar os .exe.
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          config-file: release-please-config.json
+          manifest-file: .release-please-manifest.json

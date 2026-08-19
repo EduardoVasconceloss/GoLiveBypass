@@ -16,9 +16,10 @@
 
 set -euo pipefail
 
-# Commit fixo, nao "main": evita execucao remota de codigo via um push nao revisado. Bump faz
-# parte de cortar release nova.
-REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/04a0d03"
+# Resolvida a ultima release estavel (nao "main"): evita execucao remota de codigo via um push
+# nao revisado, sem precisar editar isto a cada release -- resolve_repo_raw() consulta a API do
+# GitHub e resolve uma vez por execucao, memoizando o resultado.
+REPO_RAW=""
 PLUGIN_FILES=("streamFix/index.tsx" "streamFix/native.ts")
 PLUGIN_DIR_NAME="streamFix"
 LEGACY_PLUGIN_DIR_NAME="goLiveBypass"
@@ -306,6 +307,21 @@ install_mod() {
     printf '%s\n' "$target"
 }
 
+resolve_repo_raw() {
+    [ -n "$REPO_RAW" ] && return 0
+
+    local api="https://api.github.com/repos/EduardoVasconceloss/StreamFix/releases/latest"
+    local tag=""
+    if have curl; then
+        tag="$(curl -fsSL -H 'User-Agent: StreamFix-Installer' "$api" 2>/dev/null | grep -o '"tag_name" *: *"[^"]*"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/')"
+    elif have wget; then
+        tag="$(wget -qO- --header='User-Agent: StreamFix-Installer' "$api" 2>/dev/null | grep -o '"tag_name" *: *"[^"]*"' | head -n1 | sed -E 's/.*"([^"]+)"$/\1/')"
+    fi
+
+    [ -n "$tag" ] || fail "Nao consegui descobrir a ultima release estavel do StreamFix pela API do GitHub. Verifique sua conexao e tente de novo."
+    REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/$tag"
+}
+
 repo_file() {
     local relative="$1"
     local local_path="$SCRIPT_DIR/../$relative"
@@ -313,6 +329,8 @@ repo_file() {
         cat "$local_path"
         return 0
     fi
+
+    resolve_repo_raw
 
     if have curl; then
         curl -fsSL "$REPO_RAW/$relative" || fail "Nao consegui baixar $relative. Verifique sua conexao."

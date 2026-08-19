@@ -21,10 +21,29 @@ try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
 
-# Mesmo commit fixo que installer/StreamFix-Installer.ps1 usa (ver o comentario de $RepoRaw
-# la). Bump faz parte de cortar release nova, junto com o pin do .ps1/.bat e os dois .exe.
-$CoreRepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/04a0d03'
-$CoreUrl = "$CoreRepoRaw/installer/StreamFix-Installer.ps1"
+# Mesma resolucao em runtime que installer/StreamFix-Installer.ps1 usa pro proprio $RepoRaw
+# (ver o comentario la): pega a ultima release estavel pela API do GitHub, sem precisar editar
+# nada a cada release. Resolvida uma unica vez aqui e repassada pro motor via -ResolvedTag (nas
+# duas chamadas dele abaixo) -- se cada um consultasse a API por conta propria, uma release nova
+# saindo no meio da instalacao poderia deixar o motor baixado e os arquivos que ele baixa depois
+# vindo de revisoes diferentes.
+$script:ResolvedTag = $null
+
+function Resolve-LatestTag {
+    if ($script:ResolvedTag) { return $script:ResolvedTag }
+
+    try {
+        $release = Invoke-RestMethod -UseBasicParsing -Headers @{ 'User-Agent' = 'StreamFix-Installer' } `
+            -Uri 'https://api.github.com/repos/EduardoVasconceloss/StreamFix/releases/latest'
+    } catch {
+        throw 'Nao consegui descobrir a ultima release estavel do StreamFix pela API do GitHub. Verifique sua conexao e tente de novo.'
+    }
+
+    if (-not $release.tag_name) { throw 'A API do GitHub nao devolveu uma tag de release valida.' }
+
+    $script:ResolvedTag = $release.tag_name
+    return $script:ResolvedTag
+}
 
 function Resolve-CoreScript {
     if ($PSScriptRoot) {
@@ -32,8 +51,9 @@ function Resolve-CoreScript {
         if (Test-Path -LiteralPath $local) { return (Get-Content -LiteralPath $local -Raw) }
     }
 
+    $url = "https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/$(Resolve-LatestTag)/installer/StreamFix-Installer.ps1"
     try {
-        return (Invoke-WebRequest -UseBasicParsing -Uri $CoreUrl).Content
+        return (Invoke-WebRequest -UseBasicParsing -Uri $url).Content
     } catch {
         throw 'Nao consegui baixar o motor de instalacao. Verifique sua conexao.'
     }
@@ -44,7 +64,7 @@ $coreTempPath = Join-Path $env:TEMP 'StreamFix-Installer-Core.ps1'
 [IO.File]::WriteAllText($coreTempPath, $coreContent, (New-Object Text.UTF8Encoding($false)))
 
 # Write-* viram no-op: nesta janela (-noConsole) nao ha console ouvindo Write-Host.
-. $coreTempPath -NoAutoRun
+. $coreTempPath -NoAutoRun -ResolvedTag $script:ResolvedTag
 function Write-Step($text) { }
 function Write-Ok($text) { }
 function Write-Warn($text) { }
@@ -351,11 +371,12 @@ param(
     [string] $ModChoice,
     [string] $ProxyChoice,
     [string] $ManualProxy,
-    [bool] $Permanent
+    [bool] $Permanent,
+    [string] $ResolvedTag
 )
 
 $ErrorActionPreference = 'Stop'
-. $CorePath -NoAutoRun
+. $CorePath -NoAutoRun -ResolvedTag $ResolvedTag
 
 # Write-Information, nunca Write-Output: Write-Output entra no mesmo stream do valor de
 # retorno de qualquer funcao no meio do caminho, e uma chamada de log ali dentro corrompia esse
@@ -445,6 +466,7 @@ function Start-Install {
     $ps.AddParameter('ProxyChoice', $proxyChoice) | Out-Null
     $ps.AddParameter('ManualProxy', $manualProxy) | Out-Null
     $ps.AddParameter('Permanent', [bool] $radioPermanent.Checked) | Out-Null
+    $ps.AddParameter('ResolvedTag', $script:ResolvedTag) | Out-Null
 
     $output = New-Object 'System.Management.Automation.PSDataCollection[psobject]'
 
