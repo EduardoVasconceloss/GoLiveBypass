@@ -1054,8 +1054,25 @@ function Show-MainMenu {
 }
 
 if (-not $NoAutoRun) {
+    # Quem roda o .exe direto (sem passar pelo .bat) nunca tinha um "pressione uma tecla" no
+    # final: a janela fechava sozinha na hora que a instalacao terminava, erro ou nao, sem dar
+    # tempo de ler nada. Um amigo tomou um erro em vermelho e a janela sumiu antes de conseguir
+    # ler o que dizia. Start-Transcript grava tudo que passa pela tela num arquivo no Desktop
+    # -- assim, mesmo que a janela feche rapido demais, sobra um arquivo pra mandar pra quem
+    # for ajudar a resolver. So pausa quando NAO e -Yes: automacao (meus proprios testes
+    # incluidos) passa -Yes justamente para nao esperar tecla nenhuma, e um Read-Host
+    # incondicional aqui travaria esses casos para sempre, sem stdin nenhum para responder.
+    $logPath = $null
+    try {
+        $logPath = Join-Path ([Environment]::GetFolderPath('Desktop')) "GoLiveBypass-log-$(Get-Date -Format 'yyyyMMdd-HHmmss').txt"
+        Start-Transcript -Path $logPath -Append | Out-Null
+    } catch {
+        $logPath = $null
+    }
+
     Show-Banner
 
+    $failed = $false
     try {
         switch ($Mode) {
             'Install' { Invoke-Install (Find-Checkout) }
@@ -1064,10 +1081,23 @@ if (-not $NoAutoRun) {
             default { Show-MainMenu }
         }
     } catch {
+        $failed = $true
         Write-Host ''
         Write-Err $_.Exception.Message
-        exit 1
+    }
+
+    if ($logPath) {
+        try { Stop-Transcript | Out-Null } catch { }
+        Write-Host ''
+        Write-Host "  Log completo desta instalacao: $logPath" -ForegroundColor DarkGray
     }
 
     Write-Host ''
+
+    if (-not $Yes) {
+        Write-Host '  Pressione Enter para fechar...' -ForegroundColor DarkGray
+        try { Read-Host | Out-Null } catch { }
+    }
+
+    if ($failed) { exit 1 }
 }
