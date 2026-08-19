@@ -33,6 +33,24 @@ const MAX_CANDIDATES = 48;
 const MIN_UPTIME = 90;
 const MAX_LISTED_TIMEOUT = 1500;
 
+// O Vencord indexa settings pelo campo "name:" do plugin -- trocar esse campo sozinho comeca
+// do zero pra quem ja tinha o plugin instalado sob o nome antigo, perdendo proxy escolhido,
+// paises excluidos e o pote de saidas guardadas. Copia uma vez, no carregamento do modulo (o
+// mais cedo possivel, antes do renderer ler as proprias settings) e de novo no inicio de
+// enable() como reforco. So copia se o destino ainda nao existe -- nunca sobrescreve.
+function migrateLegacySettings() {
+    const rendererPlugins = (RendererSettings.store.plugins ??= {});
+    if (rendererPlugins.GoLiveBypass && !rendererPlugins.StreamFix) {
+        rendererPlugins.StreamFix = { ...rendererPlugins.GoLiveBypass };
+    }
+
+    const nativePlugins = (NativeSettings.store.plugins ??= {});
+    if (nativePlugins.GoLiveBypass && !nativePlugins.StreamFix) {
+        nativePlugins.StreamFix = { ...nativePlugins.GoLiveBypass };
+    }
+}
+migrateLegacySettings();
+
 // Portas SOCKS de Tor em ordem de preferencia; 9052 primeiro por ser a que o instalador
 // configura com bridge meek (atravessa rede censurada).
 const TOR_PORTS = [9052, 9150, 9050, 9250];
@@ -818,6 +836,7 @@ async function stopRouter() {
 // Extraida do app.whenReady original pra ser chamavel de novo: sem isso, um plugin ativado
 // depois do boot (nao atado ao evento de abertura do app) nunca disparava o roteador.
 export async function enable(_?: IpcMainInvokeEvent) {
+    migrateLegacySettings();
     if (scope !== "off") return { success: true as const };
 
     try {
