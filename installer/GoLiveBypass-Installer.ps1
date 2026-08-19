@@ -37,6 +37,17 @@ $ErrorActionPreference = 'Stop'
 # com -ExecutionPolicy Bypass.
 try { Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass -Force } catch { }
 
+# Alguns antivirus/EDR rodam um .exe novo e desconhecido numa primeira passada de sandbox com
+# o ambiente do processo raspado (sem USERPROFILE/TEMP), antes de liberar a execucao de
+# verdade. Sem essa checagem, isso vira la na frente um erro criptico do .NET tentando montar
+# um caminho vazio -- "nao e possivel associar o argumento ao parametro 'Path'". Falhar aqui,
+# cedo e com uma mensagem que aponta o antivirus, poupa uma investigacao as cegas depois.
+foreach ($envVar in @('USERPROFILE', 'TEMP')) {
+    if (-not [Environment]::GetEnvironmentVariable($envVar)) {
+        throw "A variavel de ambiente $envVar veio vazia para este processo. Isso costuma acontecer quando um antivirus roda o instalador numa sandbox restrita antes de liberar de verdade -- confirme que o .exe/.ps1 esta liberado no seu antivirus e tente de novo."
+    }
+}
+
 # Commit fixo, nao "main": evita execucao remota de codigo via um push nao revisado. Bump faz
 # parte de cortar release nova (junto com a tag installer-vN e o .exe).
 $RepoRaw = 'https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/3fee0e5'
@@ -505,6 +516,11 @@ function Start-Discord {
 
 function Invoke-Install($root) {
     $root = Select-Target $root
+    # Sem isso, um $root vazio (Select-Target devolvendo algo inesperado) so aparece la na
+    # frente como um erro criptico do .NET tipo "nao e possivel associar o argumento ao
+    # parametro 'Path' porque ele e uma cadeia de caracteres vazia" -- sem dizer o que faltou.
+    if (-not $root) { throw 'Nao consegui determinar a pasta de instalacao. Tente de novo, ou aponte com -Source.' }
+
     $proxy = Select-Proxy
     $permanent = Select-Persistence
 
