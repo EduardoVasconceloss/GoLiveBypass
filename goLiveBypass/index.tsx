@@ -253,8 +253,15 @@ async function retryBehindExit() {
     }
 }
 
+// Incrementado a cada CONNECTION_OPEN. O gateway pode reconectar antes do timer de 1,5s de
+// uma chamada anterior disparar (rede oscilando), e ai o veredito antigo nao descreve mais a
+// sessao atual: age-se so na chamada mais recente, as outras se calam.
+let sessionGeneration = 0;
+
 async function reportSession() {
     if (!Native) return;
+
+    const generation = ++sessionGeneration;
 
     let exit: string | null = null;
     try {
@@ -269,6 +276,8 @@ async function reportSession() {
     // loja do experimento para o videoIsBlocked estourar, e ai o plugin fica mudo, sem toast
     // e sem a nova tentativa, em vez de dizer que nao conseguiu ler o veredito.
     setTimeout(() => {
+        if (generation !== sessionGeneration) return;
+
         try {
             if (videoIsBlocked()) {
                 logger.warn("O servidor continuou bloqueando video nesta sessao, saida do gateway:", exit);

@@ -687,15 +687,23 @@ async function serveRequest(client: Socket, request: Buffer | null) {
     const through = await currentExit();
     if (client.destroyed) return;
 
+    // LOGIN_HOSTS so chega aqui quando Session routing = login, exatamente para o momento
+    // mais sensivel da sessao (a autenticacao) nao sair pelo IP real. Cair para direto nesse
+    // caso especifico vazaria o IP real em silencio, o oposto do que a setting promete. Isso
+    // e diferente do gateway: la o fallback direto e proposital, porque senao uma saida ruim
+    // travaria o boot do Discord inteiro. Falhar fechado aqui so derruba a conexao de login
+    // (o Discord mostra erro e deixa tentar de novo), nunca o app.
+    const isLoginHost = LOGIN_HOSTS.includes(target.host);
+
     let upstream = through === null
-        ? await openDirect(target.host, target.port, RELAY_DIRECT_TIMEOUT_MS)
+        ? (isLoginHost ? null : await openDirect(target.host, target.port, RELAY_DIRECT_TIMEOUT_MS))
         : await openTunnel(through, target.host, target.port, RELAY_TUNNEL_TIMEOUT_MS);
 
     // Saida que nao entrega e descartada na hora, senao toda conexao seguinte paga o mesmo
     // tempo de espera antes de cair para direto.
     if (upstream === null && through !== null) {
         dropExit(through);
-        upstream = await openDirect(target.host, target.port, RELAY_DIRECT_TIMEOUT_MS);
+        upstream = isLoginHost ? null : await openDirect(target.host, target.port, RELAY_DIRECT_TIMEOUT_MS);
     }
 
     if (upstream === null) return client.destroy();
@@ -931,7 +939,18 @@ export async function retryWithProxy(event: IpcMainInvokeEvent, excludedCountrie
         return { retried: false as const, reason: "tentativas esgotadas" };
     }
 
+    // Reserva a vaga antes de qualquer await. O gateway pode reconectar em rajada (rede
+    // oscilando), e cada reconexao dispara sua propria chamada a esta funcao: sem reservar
+    // aqui, duas chamadas concorrentes passam pela checagem acima com o mesmo "retries" (JS e
+    // single-threaded, mas o primeiro await abaixo cede o controle, e a segunda chamada corre
+    // nesse intervalo), e as duas terminam recarregando a janela, furando o teto de
+    // MAX_RETRIES. Se a tentativa acabar não indo adiante (sem saida, roteador desligado,
+    // janela sumiu), a vaga volta: nao e falha do servidor, entao nao deve contar.
+    retries++;
+    const attempt = retries;
+
     if (scope === "off") {
+        retries--;
         log("o roteador nao esta de pe, recarregar repetiria a mesma falha");
         return { retried: false as const, reason: "roteador desligado" };
     }
@@ -960,28 +979,31 @@ export async function retryWithProxy(event: IpcMainInvokeEvent, excludedCountrie
         through = exit;
     }
 
-    // Sem saida no ar, recarregar cairia direto de novo e repetiria a mesma falha, gastando
-    // uma tentativa. Aqui nao ha corrida com o gateway para ganhar, entao vale esperar a
-    // busca inteira em vez dos prazos curtos do boot.
+    // Sem saida no ar, recarregar cairia direto de novo e repetiria a mesma falha. Aqui nao ha
+    // corrida com o gateway para ganhar, entao vale esperar a busca inteira em vez dos prazos
+    // curtos do boot.
     if (through === null) {
         await chooseExit(excluded);
         through = exit;
     }
 
     if (through === null) {
+        retries--;
         log("nenhuma saida respondeu, a sessao continua direta");
         return { retried: false as const, reason: "nenhuma saida respondeu" };
     }
 
-    if (event.sender.isDestroyed()) return { retried: false as const, reason: "janela indisponivel" };
+    if (event.sender.isDestroyed()) {
+        retries--;
+        return { retried: false as const, reason: "janela indisponivel" };
+    }
 
-    retries++;
-    log(`o servidor bloqueou esta sessao, recarregando atras de ${through} (tentativa ${retries} de ${MAX_RETRIES})`);
+    log(`o servidor bloqueou esta sessao, recarregando atras de ${through} (tentativa ${attempt} de ${MAX_RETRIES})`);
 
     // event.sender e a janela que roda o plugin. Guardar a primeira janela criada nao servia:
     // a primeira do Discord e a tela de abertura, e recarregar ela nao recarrega o cliente.
     event.sender.reload();
-    return { retried: true as const, attempt: retries };
+    return { retried: true as const, attempt };
 }
 
 export async function testProxy(_: IpcMainInvokeEvent, proxyRules: unknown) {
