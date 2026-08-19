@@ -16,7 +16,7 @@
 
 set -euo pipefail
 
-REPO_RAW="https://raw.githubusercontent.com/bezumiya/GoLiveBypass/main"
+REPO_RAW="https://raw.githubusercontent.com/EduardoVasconceloss/GoLiveBypass/main"
 PLUGIN_FILES=("goLiveBypass/index.tsx" "goLiveBypass/native.ts")
 PLUGIN_DIR_NAME="goLiveBypass"
 EQUICORD_GIT="https://github.com/Equicord/Equicord"
@@ -46,7 +46,7 @@ fail() { printf '\n  %s[X] %s%s\n\n' "$C_RED" "$1" "$C_OFF" >&2; exit 1; }
 banner() {
     printf '\n  %sGoLiveBypass%s\n' "$C_CYAN$C_BOLD" "$C_OFF"
     printf '  %sGo Live e camera de volta no Discord%s\n' "$C_DIM" "$C_OFF"
-    printf '  %shttps://github.com/bezumiya/GoLiveBypass%s\n\n' "$C_DIM" "$C_OFF"
+    printf '  %shttps://github.com/EduardoVasconceloss/GoLiveBypass (fork de bezumiya/GoLiveBypass)%s\n\n' "$C_DIM" "$C_OFF"
 }
 
 confirm() {
