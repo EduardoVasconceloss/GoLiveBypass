@@ -149,12 +149,8 @@ function Update-PathFromEnvironment {
     $user = [Environment]::GetEnvironmentVariable('Path', 'User')
     $fresh = @($machine, $user | Where-Object { $_ }) -join ';'
 
-    # Mescla no PATH atual do processo, nunca substitui: quem abre o instalador de dentro de um
-    # shell de dev, wrapper ou instalacao portatil pode ter git/node so ali, sem estar no
-    # registro (nem Machine nem User) -- substituir descartaria essas entradas e faria uma
-    # ferramenta que funciona perfeitamente parecer "faltando" (Install-Toolchain chama isto
-    # antes mesmo do primeiro Test-Tool). "-notcontains" e "-eq" comparam string sem diferenciar
-    # maiusculas/minusculas por padrao no PowerShell, o que já casa com paths do Windows.
+    # Mescla no PATH atual, nunca substitui: descartaria entradas que so existem no processo
+    # (wrapper, shell de dev, instalacao portatil) e nao estao no registro.
     $existing = @($env:Path -split ';' | Where-Object { $_ })
     $newEntries = @($fresh -split ';' | Where-Object { $_ -and ($existing -notcontains $_) })
     $env:Path = ($existing + $newEntries) -join ';'
@@ -341,13 +337,9 @@ function Show-ModChoice {
 }
 
 function Install-Toolchain($needGit) {
-    # Quem instala o Node (ou o git) e so depois abre o instalador sem reiniciar o terminal --
-    # ou, pior, da so um duplo-clique no .exe pelo Explorer -- herda o PATH de quando o processo
-    # pai (cmd/PowerShell/explorer.exe) foi aberto, de antes do instalador do Node atualizar o
-    # registro. A ferramenta existe de verdade e aparece num terminal novo, mas Get-Command
-    # continua sem achar no processo atual. Reler o PATH do registro aqui, antes do primeiro
-    # Test-Tool, evita esse falso "nao encontrado" -- sem isso so o caminho do winget (que roda
-    # Update-PathFromEnvironment depois de instalar) corrigia o PATH.
+    # Relê o PATH antes do primeiro Test-Tool: quem instala o Node e abre o instalador sem
+    # reiniciar o terminal (ou clica no .exe pelo Explorer) herda um PATH de antes do registro
+    # atualizar, e a ferramenta parece "faltando" mesmo estando la.
     Update-PathFromEnvironment
 
     $missing = @()
@@ -368,10 +360,7 @@ function Install-Toolchain($needGit) {
                 Invoke-Native { winget install --id $id --accept-source-agreements --accept-package-agreements --silent }
             }
         } else {
-            # Sem winget (Windows sem a App Installer, imagem corporativa com sideload
-            # bloqueado etc.): cai pro instalador oficial de cada ferramenta, baixado e
-            # conferido por hash em Install-ToolDirect. So winget continua sendo o caminho
-            # padrao -- este e so o plano B para quem nao tem.
+            # Sem winget: cai pro instalador oficial de cada ferramenta (Install-ToolDirect).
             Write-Warn 'Sem winget nesta maquina.'
             if (-not (Confirm-Action "Baixar e instalar $($missing -join ' e ') pelo instalador oficial de cada um?")) {
                 throw "Instale $($missing -join ' e ') manualmente e rode de novo."
@@ -382,7 +371,7 @@ function Install-Toolchain($needGit) {
             }
         }
 
-        # Winget e o instalador oficial gravam o PATH novo no registro (Machine/User), e da pra reler isso no mesmo
+        # O winget grava o PATH novo no registro (Machine/User), e da pra reler isso no mesmo
         # processo sem reabrir o terminal -- e a mesma tecnica ja usada pra pegar o pnpm
         # recem-instalado logo abaixo. Antes o instalador sempre pedia pra fechar e abrir de
         # novo aqui, e como este mesmo Install-Toolchain roda de novo mais adiante no fluxo
@@ -736,13 +725,8 @@ function Test-PortOpen($port, $timeoutMs = 500) {
 $TorVersion = '15.0.20'
 $TorArchiveSha256 = 'd59bff934e3ad876e1623e24ae60c19aeea56f50178093b9f86fba230639f949'
 
-# Fallback para quem nao tem winget (Windows sem a App Installer, imagem corporativa com
-# sideload bloqueado etc.): baixa o instalador oficial de cada ferramenta direto do fabricante,
-# em vez de depender de um gerenciador de pacotes que pode nao existir. Mesma logica do Tor
-# acima -- versao e hash fixos, conferidos a mao contra a fonte oficial antes de publicar, nunca
-# "latest". Node: hash tirado de https://nodejs.org/dist/v$NodeVersion/SHASUMS256.txt. git: hash
-# tirado do corpo da release https://github.com/git-for-windows/git/releases/tag/$GitTag.
-# Trocar a versao aqui exige repetir essa conferencia e faz parte de cortar uma release nova.
+# Fallback sem winget: instalador oficial de cada ferramenta, versao e hash fixos (mesma logica
+# do Tor acima). Trocar a versao aqui exige conferir o hash de novo contra a fonte oficial.
 $NodeVersion = '24.19.0'
 $NodeMsiUrl = "https://nodejs.org/dist/v$NodeVersion/node-v$NodeVersion-x64.msi"
 $NodeMsiSha256 = 'f0f66c2a80c08a30a5ab5179ee9ea9e45f9b46289436a8cc87ff833b852db351'
@@ -763,8 +747,6 @@ function Install-ToolDirect($tool) {
     Write-Step "Baixando o instalador oficial do $tool"
     Invoke-WebRequest -UseBasicParsing -Uri $spec.Url -OutFile $installerPath
 
-    # Mesma ancora de confianca independente que o Tor usa: o hash fixo no script, conferido
-    # antes de publicar, nao um hash buscado agora do mesmo lugar que serviu o binario.
     Write-Step 'Conferindo o hash do download'
     $actualHash = (Get-FileHash -LiteralPath $installerPath -Algorithm SHA256).Hash.ToLowerInvariant()
     if ($actualHash -ne $spec.Sha256) {
@@ -773,9 +755,7 @@ function Install-ToolDirect($tool) {
     }
 
     Write-Step "Instalando o $tool (instalador oficial, silencioso -- pode levar um minuto)"
-    # msiexec e o instalador do git (Inno Setup) voltam pro prompt na hora se so chamados com
-    # "&": precisam de Start-Process -Wait pra o resto do script esperar a instalacao terminar
-    # de verdade antes de conferir se a ferramenta ja aparece no PATH.
+    # -Wait: msiexec e o instalador do git voltam pro prompt na hora se so chamados com "&".
     $proc = if ($tool -eq 'git') {
         Start-Process -FilePath $installerPath -ArgumentList '/VERYSILENT', '/NORESTART', '/NOCANCEL', '/SP-', '/SUPPRESSMSGBOXES', '/CLOSEAPPLICATIONS', '/RESTARTAPPLICATIONS' -Wait -PassThru
     } else {

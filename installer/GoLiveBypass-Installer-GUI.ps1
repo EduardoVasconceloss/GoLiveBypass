@@ -370,15 +370,9 @@ param(
 $ErrorActionPreference = 'Stop'
 . $CorePath -NoAutoRun
 
-# Usa Write-Information, NUNCA Write-Output, para mandar as linhas de log para fora da
-# runspace: Write-Output entra no mesmo stream que carrega o valor de retorno de QUALQUER
-# funcao no meio do caminho (Install-Mod, Copy-Plugin etc.), entao uma chamada de log no meio
-# de uma funcao que faz "return" no final comia o retorno de verdade e o trocava por um array
-# com as proprias linhas de log misturadas. Isso ja quebrou de forma bem concreta: $root virava
-# esse array, Join-Path processava cada item como um "Path" separado, e uma das linhas de log
-# (que termina em ":") virava uma tentativa de acessar uma unidade chamada por aquele texto
-# inteiro -- "Nao e possivel localizar a unidade... 'HOST|  Vou fazer'". Write-Information usa
-# um stream separado (Streams.Information), que nao interfere no valor de retorno de nada.
+# Write-Information, nunca Write-Output: Write-Output entra no mesmo stream do valor de
+# retorno de qualquer funcao no meio do caminho, e uma chamada de log ali dentro corrompia esse
+# retorno.
 function Write-Host {
     param(
         [Parameter(Position = 0, ValueFromPipeline = $true)] $Object = '',
@@ -482,9 +476,7 @@ function Start-Install {
     # O Tick do Timer roda na thread da UI, entao "puxar" o que ha de novo em $output e em
     # Streams.Information aqui dentro e seguro sem Invoke nenhum -- ao contrario de reagir ao
     # evento DataAdded da colecao, que dispara na thread da runspace de fundo (ver o comentario
-    # de Append-Log). $output so deveria receber o valor de retorno de verdade do worker (o
-    # script inteiro nao devolve nada de proposito); as linhas de log de fato chegam pelo
-    # Streams.Information, que Write-Host/Write-Step/etc. usam (ver o comentario deles).
+    # de Append-Log).
     $timer = New-Object System.Windows.Forms.Timer
     $timer.Interval = 200
     $timer.Add_Tick({
