@@ -16,6 +16,16 @@ on:
         description: "Existing release tag to attach the built .exe to (optional; skips upload if empty)"
         required: false
         default: ""
+  # Chamado direto pelo release-please.yml quando ele corta uma release: um push de tag feito
+  # com o GITHUB_TOKEN padrao (o que o release-please-action usa) nao dispara outros workflows
+  # via "on: push: tags" -- e a protecao do GitHub contra loop infinito de Actions. Chamar este
+  # workflow como reusable (workflow_call), na mesma run, contorna isso sem precisar de PAT/App.
+  workflow_call:
+    inputs:
+      tag:
+        description: "Tag da release recem-criada pelo release-please"
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -25,6 +35,8 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.tag != '' && inputs.tag || github.ref }}
 
       - name: Install ps2exe
         shell: pwsh
