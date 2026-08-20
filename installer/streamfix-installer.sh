@@ -778,6 +778,21 @@ macos_permission_failure_message() {
     printf 'Nao consegui escrever em %s. Duas causas possiveis, que de fora parecem iguais: sua conta sem privilegio de administrador, ou a permissao de Gerenciamento de Apps do macOS 15+ (Ajustes do Sistema > Privacidade e Seguranca > Gerenciamento de Apps), que sudo nao resolve.\n' "$1"
 }
 
+# Guia o clique de quem esta do outro lado da janela do instalador do mod (hoje, sempre o
+# Vencord Installer, ver macos_has_cli_installer). "acao" e "Install" ou "Uninstall", o nome do
+# botao no proprio instalador. A janela abre por conta do instalador do mod, nao do StreamFix;
+# esta funcao so avisa o que fazer nela antes de esperar.
+macos_window_click_hint() {
+    local root="$1" loc="${2:-}" acao="$3" alvo
+    alvo="Discord"
+    [ -n "$loc" ] && alvo="$(basename "$loc")"
+
+    printf '\n' >&2
+    warn "$(checkout_mod "$root") no macOS so injeta pela janela do instalador (ADR 0001: nao existe build de linha de comando dele para essa plataforma)."
+    printf '  %sQuando a janela abrir: escolha %s na lista e clique em %s.%s\n' "$C_DIM" "$alvo" "$acao" "$C_OFF" >&2
+    printf '  %sEste terminal espera e confere sozinho depois se pegou.%s\n\n' "$C_DIM" "$C_OFF" >&2
+}
+
 # No macOS a injecao nunca pede confirmacao pra elevar: o "sudo pendurado" do fluxo Linux nao
 # faz sentido aqui, porque /Applications normalmente ja e gravavel sem sudo, e quando nao e,
 # sudo tambem nao resolve a permissao de Gerenciamento de Apps do macOS 15+. Primeiro tenta o
@@ -794,6 +809,7 @@ macos_run_inject() {
         warn "O build de linha de comando nao funcionou. Caindo para a janela do instalador do mod."
     fi
 
+    macos_window_click_hint "$root" "$loc" "Install"
     step "Injetando no Discord (abre a janela do instalador do mod)"
     run_inject "$root" "$loc" || true
     injected_from_checkout "$root" && return 0
@@ -820,6 +836,7 @@ macos_run_uninject() {
         warn "O build de linha de comando nao funcionou. Caindo para a janela do instalador do mod."
     fi
 
+    macos_window_click_hint "$root" "$loc" "Uninstall"
     step "Desfazendo a injecao (abre a janela do instalador do mod)"
     (cd "$root" && pnpm uninject) || true
     return 0
@@ -1171,6 +1188,17 @@ wait_discord_exit() {
 do_install() {
     local root="${1:-}"
     root="$(select_target "$root")"
+
+    # No modo sem perguntas nao tem quem clique na janela do instalador do mod, e essa janela e
+    # o unico jeito de injetar Vencord no macOS (ADR 0001). Falhar aqui, antes de baixar
+    # toolchain e compilar, evita deixar uma janela aberta esperando alguem que nao vai aparecer.
+    # So se aplica quando a injecao de fato vai acontecer: um checkout ja injetado (linha "so
+    # reiniciando" mais abaixo) nunca chega perto da janela, e barrar esse caso so atrapalharia
+    # quem roda --yes de novo pra atualizar um Vencord que ja estava funcionando.
+    if [ "$OS_NAME" = "Darwin" ] && [ "$ASSUME_YES" -eq 1 ] && ! macos_has_cli_installer "$root" \
+        && ! injected_from_checkout "$root"; then
+        fail "$(checkout_mod "$root") no macOS so injeta pela janela do instalador do mod, e o modo sem perguntas (--yes) nao tem quem clique nela. Rode sem --yes, ou escolha Equicord (--mod equicord), que tem build de linha de comando para o macOS."
+    fi
 
     local proxy permanent=0
     proxy="$(select_proxy)"
