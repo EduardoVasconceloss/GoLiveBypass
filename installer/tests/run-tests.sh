@@ -576,6 +576,151 @@ test_macos_mensagem_permissao_cobre_as_duas_causas() {
     fixture_teardown
 }
 
+# ------------------------------------------------------------- desinstalacao/restauracao: macOS
+
+test_macos_uninject_cli_contrato_de_variaveis() {
+    printf '\n== desinstalacao (Darwin): variaveis de ambiente e flag --uninstall no contrato ==\n'
+    fixture_setup Darwin
+    MACOS_ARCH="arm64"
+
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+    local cache="$HOME/Library/Caches/StreamFix/EquilotlCli-darwin-arm64"
+    mkdir -p "$(dirname "$cache")"
+    printf '#!/bin/sh\n' > "$cache"
+    chmod +x "$cache"
+
+    local capturado=""
+    macos_exec_equilotl_cli() {
+        capturado="USER_DATA=$EQUICORD_USER_DATA_DIR DIRECTORY=$EQUICORD_DIRECTORY DEV_INSTALL=$EQUICORD_DEV_INSTALL LOC=$2 FLAG=$3"
+    }
+
+    macos_run_uninject_cli "$checkout" "$FS_PREFIX/Applications/Discord.app"
+
+    assert_eq "as tres variaveis do contrato, o --location e o --uninstall chegam certos" \
+        "USER_DATA=$checkout DIRECTORY=$checkout/dist/desktop DEV_INSTALL=1 LOC=$FS_PREFIX/Applications/Discord.app FLAG=--uninstall" \
+        "$capturado"
+
+    unset -f macos_exec_equilotl_cli
+    MACOS_ARCH=""
+    fixture_teardown
+}
+
+test_macos_run_inject_cli_ainda_manda_install() {
+    printf '\n== injecao (Darwin): macos_run_inject_cli continua mandando --install (regressao) ==\n'
+    fixture_setup Darwin
+    MACOS_ARCH="arm64"
+
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+    local cache="$HOME/Library/Caches/StreamFix/EquilotlCli-darwin-arm64"
+    mkdir -p "$(dirname "$cache")"
+    printf '#!/bin/sh\n' > "$cache"
+    chmod +x "$cache"
+
+    # Roda numa subshell com o instalador resourced de novo: outros testes deste arquivo
+    # substituem macos_run_inject_cli por um espiao e terminam com "unset -f", que apaga a
+    # funcao de verdade para o resto do processo (nao a restaura). Isolando aqui, este teste
+    # nao depende de rodar antes deles.
+    local flag_capturado
+    flag_capturado="$(
+        source "$INSTALLER"
+        FS_PREFIX="$FS_PREFIX" HOME="$HOME" OS_NAME="Darwin" MACOS_ARCH="arm64"
+        macos_exec_equilotl_cli() { printf '%s' "$3"; }
+        macos_run_inject_cli "$checkout" "$FS_PREFIX/Applications/Discord.app"
+    )"
+
+    assert_eq "macos_run_inject_cli manda --install, nao --uninstall" "--install" "$flag_capturado"
+
+    MACOS_ARCH=""
+    fixture_teardown
+}
+
+test_macos_run_uninject_tenta_cli_primeiro_para_equicord() {
+    printf '\n== desinstalacao (Darwin): Equicord tenta o CLI antes da janela ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+    local bundle="$FS_PREFIX/Applications/Discord.app"
+    local resources="$bundle/Contents/Resources"
+    make_injected "$resources" "$checkout"
+
+    local cli_chamado=0 gui_chamado=0
+    macos_run_uninject_cli() { cli_chamado=1; rm -rf "$resources"; make_asar "$resources"; return 0; }
+    run_inject() { gui_chamado=1; }
+
+    macos_run_uninject "$checkout" "$bundle" >/dev/null 2>&1
+
+    assert_eq "tenta o build de linha de comando" "1" "$cli_chamado"
+    assert_eq "nao abre a janela quando o build de linha de comando desfaz" "0" "$gui_chamado"
+    assert_false "checkout deixou de estar injetado" injected_from_checkout "$checkout"
+
+    unset -f macos_run_uninject_cli run_inject
+    fixture_teardown
+}
+
+test_macos_run_uninject_pula_cli_para_vencord() {
+    printf '\n== desinstalacao (Darwin): Vencord vai direto pra janela ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Vencord"
+    make_checkout "$checkout" "vencord"
+    local bundle="$FS_PREFIX/Applications/Discord.app"
+    local resources="$bundle/Contents/Resources"
+    make_injected "$resources" "$checkout"
+
+    local cli_chamado=0
+    macos_run_uninject_cli() { cli_chamado=1; return 1; }
+
+    macos_run_uninject "$checkout" "$bundle" >/dev/null 2>&1
+
+    assert_eq "nao tenta o build de linha de comando (Vencord nao tem CLI no macOS)" "0" "$cli_chamado"
+
+    unset -f macos_run_uninject_cli
+    fixture_teardown
+}
+
+test_macos_bundle_for_checkout() {
+    printf '\n== restauracao (Darwin): resolve o bundle a partir do checkout injetado ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+    local bundle="$FS_PREFIX/Applications/Discord PTB.app"
+    make_injected "$bundle/Contents/Resources" "$checkout"
+
+    assert_eq "acha o bundle certo (o canal PTB, nao qualquer um)" \
+        "$bundle" "$(macos_bundle_for_checkout "$checkout")"
+
+    fixture_teardown
+}
+
+test_macos_bundle_for_checkout_sem_injecao() {
+    printf '\n== restauracao (Darwin): sem injecao, nao ha bundle para resolver ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+
+    assert_false "macos_bundle_for_checkout falha sem injecao" macos_bundle_for_checkout "$checkout"
+
+    fixture_teardown
+}
+
+test_macos_discord_running_por_canal() {
+    printf '\n== fechar/reabrir (Darwin): macos_discord_running distingue canal pelo caminho do bundle ==\n'
+    fixture_setup Darwin
+
+    pgrep() {
+        case "$*" in *"Discord PTB.app"*) return 0 ;; *) return 1 ;; esac
+    }
+
+    assert_true "acha o processo do canal PTB" \
+        macos_discord_running "$FS_PREFIX/Applications/Discord PTB.app"
+    assert_false "nao confunde com o canal estavel" \
+        macos_discord_running "$FS_PREFIX/Applications/Discord.app"
+
+    unset -f pgrep
+    fixture_teardown
+}
+
 # --------------------------------------------------------------------- identificacao de mod
 
 test_checkout_mod() {
@@ -593,6 +738,36 @@ test_checkout_mod() {
     make_checkout "$HOME/Equicord-main" "equicord"
     assert_eq "nome da pasta nao importa quando o package.json responde" \
         "Equicord" "$(checkout_mod "$HOME/Equicord-main")"
+
+    fixture_teardown
+}
+
+# ------------------------------------------------------------- modo temporario: elegibilidade
+
+test_select_persistence_nega_temporario_vencord_macos() {
+    printf '\n== modo temporario (Darwin): nao oferece a escolha para Vencord ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Vencord"
+    make_checkout "$checkout" "vencord"
+
+    # Stdin fechado (< /dev/null): se a elegibilidade nao fosse checada antes do "read", a
+    # pergunta bateria em EOF em vez de devolver "permanente" silenciosamente, e o teste pegaria
+    # a diferenca pelo codigo de saida.
+    assert_true "decide sozinho por permanente, sem perguntar" \
+        select_persistence "$checkout" < /dev/null
+
+    fixture_teardown
+}
+
+test_select_persistence_oferece_temporario_equicord_macos() {
+    printf '\n== modo temporario (Darwin): oferece a escolha para Equicord ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+
+    local rc=0
+    printf '2\n' | select_persistence "$checkout" >/dev/null 2>&1 || rc=$?
+    assert_eq "escolher [2] devolve temporario (saida 1)" "1" "$rc"
 
     fixture_teardown
 }
@@ -636,6 +811,15 @@ test_macos_run_inject_pula_cli_para_vencord
 test_macos_run_inject_degrada_quando_cli_falha
 test_macos_permissao_alvo_de_sistema
 test_macos_mensagem_permissao_cobre_as_duas_causas
+test_macos_uninject_cli_contrato_de_variaveis
+test_macos_run_inject_cli_ainda_manda_install
+test_macos_run_uninject_tenta_cli_primeiro_para_equicord
+test_macos_run_uninject_pula_cli_para_vencord
+test_macos_bundle_for_checkout
+test_macos_bundle_for_checkout_sem_injecao
+test_macos_discord_running_por_canal
+test_select_persistence_nega_temporario_vencord_macos
+test_select_persistence_oferece_temporario_equicord_macos
 test_checkout_mod
 test_guarda_de_sourcing
 
