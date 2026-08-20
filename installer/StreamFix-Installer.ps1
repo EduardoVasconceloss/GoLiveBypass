@@ -567,16 +567,22 @@ function Start-Discord {
 
 function Invoke-Install($root) {
     $root = Select-Target $root
-    # Sem isso, um $root vazio (Select-Target devolvendo algo inesperado) so aparece la na
-    # frente como um erro criptico do .NET tipo "nao e possivel associar o argumento ao
-    # parametro 'Path' porque ele e uma cadeia de caracteres vazia" -- sem dizer o que faltou.
-    if (-not $root) { throw 'Nao consegui determinar a pasta de instalacao. Tente de novo, ou aponte com -Source.' }
 
-    # Array aqui significa que alguma funcao no caminho vazou saida pro stream de sucesso e ela
-    # entrou no valor de retorno (ver Invoke-Native). Falhar aqui, dizendo o que veio junto, e
-    # muito melhor que deixar o Join-Path la na frente reclamar de um drive inexistente.
-    if ($root -isnot [string]) {
-        throw "A pasta de instalacao veio poluida com a saida de outro comando: $($root -join ' | ')"
+    # Um comando nativo escreve na saida da funcao que o chama, e Select-Target chama outras que
+    # rodam npm e git. O Invoke-Native ja contem isso, mas se qualquer nativo novo escapar dele
+    # o $root volta a chegar como array, e o Test-Path quebra ao ligar um elemento vazio -- com
+    # uma mensagem sobre parametro que nao diz nada a quem esta instalando.
+    #
+    # Ficar com a ultima linha e o que resolve: o caminho de verdade sai do "return" no fim da
+    # funcao, depois de toda a saida que vazou. E nao esconde erro nenhum, porque a checagem
+    # logo abaixo continua valendo.
+    $root = @($root) | Where-Object { $_ } | Select-Object -Last 1
+
+    # Checar que a pasta existe, e nao so que a variavel tem algo: um checkout que nao ficou
+    # pronto (clone interrompido, permissao negada) passaria pela checagem de vazio e so
+    # apareceria muito depois, como erro do .NET sobre o parametro 'Path'.
+    if (-not $root -or -not (Test-Path -LiteralPath $root)) {
+        throw 'Nao consegui determinar a pasta de instalacao. Tente de novo, ou aponte com -Source.'
     }
 
     Remove-LegacyTor
