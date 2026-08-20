@@ -1,10 +1,12 @@
 #!/usr/bin/env bash
 #
-# Testes de caracterizacao da camada de descoberta do instalador Linux (streamfix-installer.sh).
+# Testes de caracterizacao da camada de descoberta do instalador (streamfix-installer.sh),
+# Linux e macOS.
 #
 # Shell puro, sem framework: o repositorio nao tem manifesto de dependencias para a parte de
 # instalador, e um framework a mais seria a maior adicao desta spec. Roda com o que ja vem
-# numa maquina Linux comum.
+# numa maquina Linux ou macOS comum -- o ramo Darwin da descoberta e exercitado por fixture em
+# qualquer runner, sem precisar de um Mac de verdade (ver fixture_setup()).
 #
 # Uso:
 #   ./installer/tests/run-tests.sh
@@ -79,10 +81,16 @@ assert_false() {
 
 FIXTURE_ROOT=""
 
+# fixture_setup [Linux|Darwin]
+#
+# O padrao e Linux, e nao o uname -s de verdade do runner: os dois jobs do CI (ubuntu-latest e
+# macos-latest) rodam o mesmo run-tests.sh, e sem isto os testes de Linux quebrariam so por
+# rodar no runner macOS. Cada teste que quer o ramo Darwin passa isso explicitamente.
 fixture_setup() {
     FIXTURE_ROOT="$(mktemp -d)"
     FS_PREFIX="$FIXTURE_ROOT/root"
     HOME="$FIXTURE_ROOT/home"
+    OS_NAME="${1:-Linux}"
     unset XDG_CONFIG_HOME XDG_DATA_HOME 2>/dev/null
     mkdir -p "$FS_PREFIX" "$HOME"
 }
@@ -249,6 +257,121 @@ test_nenhum_discord() {
     fixture_teardown
 }
 
+# ------------------------------------------------------------------------ descoberta: macOS
+
+test_macos_sistema() {
+    printf '\n== descoberta (Darwin): canal estavel em /Applications ==\n'
+    fixture_setup Darwin
+    make_asar "$FS_PREFIX/Applications/Discord.app/Contents/Resources"
+
+    assert_set_eq "acha o resources dentro do bundle de sistema" \
+        "$FS_PREFIX/Applications/Discord.app/Contents/Resources" \
+        "$(discord_resources)"
+    assert_eq "install_location resolve o bundle inteiro, nao o Contents" \
+        "$FS_PREFIX/Applications/Discord.app" \
+        "$(install_location "$FS_PREFIX/Applications/Discord.app/Contents/Resources")"
+
+    fixture_teardown
+}
+
+test_macos_usuario() {
+    printf '\n== descoberta (Darwin): canal PTB em ~/Applications ==\n'
+    fixture_setup Darwin
+    make_asar "$HOME/Applications/Discord PTB.app/Contents/Resources"
+
+    assert_set_eq "acha o resources dentro do bundle do usuario" \
+        "$HOME/Applications/Discord PTB.app/Contents/Resources" \
+        "$(discord_resources)"
+    assert_eq "install_location resolve o bundle do usuario" \
+        "$HOME/Applications/Discord PTB.app" \
+        "$(install_location "$HOME/Applications/Discord PTB.app/Contents/Resources")"
+
+    fixture_teardown
+}
+
+test_macos_quatro_canais() {
+    printf '\n== descoberta (Darwin): os quatro canais ao mesmo tempo ==\n'
+    fixture_setup Darwin
+    make_asar "$FS_PREFIX/Applications/Discord.app/Contents/Resources"
+    make_asar "$FS_PREFIX/Applications/Discord PTB.app/Contents/Resources"
+    make_asar "$HOME/Applications/Discord Canary.app/Contents/Resources"
+    make_asar "$HOME/Applications/Discord Development.app/Contents/Resources"
+
+    local achado count
+    achado="$(discord_resources)"
+    count="$(printf '%s\n' "$achado" | sed '/^$/d' | wc -l | tr -d ' ')"
+    assert_eq "acha os quatro canais" "4" "$count"
+    assert_set_eq "os quatro caminhos aparecem, em qualquer ordem" \
+        "$FS_PREFIX/Applications/Discord.app/Contents/Resources
+$FS_PREFIX/Applications/Discord PTB.app/Contents/Resources
+$HOME/Applications/Discord Canary.app/Contents/Resources
+$HOME/Applications/Discord Development.app/Contents/Resources" \
+        "$achado"
+
+    fixture_teardown
+}
+
+test_macos_injetado() {
+    printf '\n== descoberta (Darwin): bundle ja injetado (asar original renomeado) ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+    make_injected "$FS_PREFIX/Applications/Discord.app/Contents/Resources" "$checkout"
+
+    assert_set_eq "o resources injetado continua aparecendo na descoberta (_app.asar conta)" \
+        "$FS_PREFIX/Applications/Discord.app/Contents/Resources" \
+        "$(discord_resources)"
+    assert_eq "checkout_from_injection acha o checkout pelo stub" \
+        "$checkout" \
+        "$(checkout_from_injection)"
+    assert_eq "installed_mod le Equicord pelo require() do stub" \
+        "Equicord" \
+        "$(installed_mod)"
+    assert_true "injected_from_checkout confirma que este checkout esta injetado" \
+        injected_from_checkout "$checkout"
+    assert_eq "install_location resolve o bundle mesmo ja injetado" \
+        "$FS_PREFIX/Applications/Discord.app" \
+        "$(install_location "$FS_PREFIX/Applications/Discord.app/Contents/Resources")"
+
+    fixture_teardown
+}
+
+test_macos_sem_flatpak() {
+    printf '\n== descoberta (Darwin): nao alcanca o ramo de flatpak ==\n'
+    fixture_setup Darwin
+    # As mesmas fixtures que os testes Linux usam para achar Discord de flatpak. No ramo
+    # Darwin elas tem que ficar invisiveis: nada de flatpak existe no macOS.
+    make_asar "$FS_PREFIX/var/lib/flatpak/app/com.discordapp.Discord/current/active/files/discord/resources"
+    make_asar "$HOME/.var/app/com.discordapp.Discord/config/discord/app-1.0.9/resources"
+    make_asar "$FS_PREFIX/usr/share/discord/resources"
+
+    assert_eq "discord_resources nao ve nenhuma fixture ao estilo Linux/flatpak" \
+        "" "$(discord_resources)"
+
+    fixture_teardown
+}
+
+# ------------------------------------------------------------------ macOS: settings do mod
+
+test_macos_settings_path() {
+    printf '\n== settings (Darwin): pasta de suporte a aplicativos do usuario ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+
+    assert_eq "settings ficam em Library/Application Support, nao em .config" \
+        "$HOME/Library/Application Support/Equicord/settings/settings.json" \
+        "$(mod_settings_file "$checkout")"
+
+    EQUICORD_USER_DATA_DIR="$HOME/Custom/EquicordData"
+    assert_eq "a variavel de override continua valendo no macOS" \
+        "$HOME/Custom/EquicordData/settings/settings.json" \
+        "$(mod_settings_file "$checkout")"
+    unset EQUICORD_USER_DATA_DIR
+
+    fixture_teardown
+}
+
 # --------------------------------------------------------------------- identificacao de mod
 
 test_checkout_mod() {
@@ -291,6 +414,12 @@ test_flatpak_usuario
 test_discord_ja_injetado
 test_mais_de_um_discord
 test_nenhum_discord
+test_macos_sistema
+test_macos_usuario
+test_macos_quatro_canais
+test_macos_injetado
+test_macos_sem_flatpak
+test_macos_settings_path
 test_checkout_mod
 test_guarda_de_sourcing
 

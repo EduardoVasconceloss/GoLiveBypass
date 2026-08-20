@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 #
-# StreamFix - instalador automatico (Linux)
+# StreamFix - instalador automatico
 #
 # Encontra sozinho o Equicord ou o Vencord que voce tem, instala o plugin, compila e injeta.
 # Se voce nao tiver nenhum dos dois, pergunta qual quer e instala junto.
@@ -27,11 +27,21 @@ EQUICORD_GIT="https://github.com/Equicord/Equicord"
 VENCORD_GIT="https://github.com/Vendicated/Vencord"
 FLATPAK_IDS=("com.discordapp.Discord" "com.discordapp.DiscordPTB" "com.discordapp.DiscordCanary")
 
+# Os quatro canais que o Equilotl reconhece no macOS (find_discord_darwin.go, macosNames),
+# cada um como bundle solto em /Applications ou ~/Applications -- sem bootstrap, sem flatpak.
+MACOS_BUNDLE_NAMES=("Discord.app" "Discord PTB.app" "Discord Canary.app" "Discord Development.app")
+
 # Vazio em producao. Os testes exportam isto antes de carregar o script e prefixam as raizes
-# absolutas que a descoberta varre (/usr/..., /opt/..., /var/lib/flatpak/...), para rodar
-# contra uma arvore de fixtures sem tocar no sistema de arquivos de verdade. As raizes que ja
-# sao relativas a $HOME nao precisam disto: o teste aponta o proprio HOME para a fixture.
+# absolutas que a descoberta varre (/usr/..., /opt/..., /var/lib/flatpak/..., /Applications),
+# para rodar contra uma arvore de fixtures sem tocar no sistema de arquivos de verdade. As
+# raizes que ja sao relativas a $HOME nao precisam disto: o teste aponta o proprio HOME para a
+# fixture.
 FS_PREFIX="${FS_PREFIX:-}"
+
+# Mesmo esquema do FS_PREFIX: em producao vem do uname -s de verdade, e os testes exportam
+# "Linux" ou "Darwin" antes de carregar o script para exercitar os dois ramos de descoberta em
+# qualquer runner, sem depender de em qual sistema operacional o CI de fato roda.
+OS_NAME="${OS_NAME:-$(uname -s)}"
 
 MODE="menu"
 MOD=""
@@ -172,6 +182,24 @@ is_checkout() {
     [ -d "$1/.git" ]
 }
 
+# O bundle inteiro fica em /Applications ou ~/Applications, sem bootstrap e sem flatpak: o
+# Squirrel.Mac troca o .app inteiro a cada atualizacao, entao o app.asar de verdade esta sempre
+# dentro do proprio bundle, em Contents/Resources. Mesma coisa que o Equilotl faz em
+# find_discord_darwin.go para achar o Discord no macOS.
+macos_discord_resources() {
+    local base nome sub
+    for base in "$FS_PREFIX/Applications" "$HOME/Applications"; do
+        [ -d "$base" ] || continue
+        for nome in "${MACOS_BUNDLE_NAMES[@]}"; do
+            sub="$base/$nome/Contents/Resources"
+            if [ -e "$sub/app.asar" ] || [ -e "$sub/_app.asar" ]; then
+                printf '%s\n' "$sub"
+            fi
+        done
+    done
+    return 0
+}
+
 # Procura o app.asar de verdade em vez de confiar numa lista de caminhos.
 #
 # Desde a versao 1.0.136, de maio de 2026, o pacote de Linux do Discord (tar.gz, .deb, o
@@ -180,6 +208,11 @@ is_checkout() {
 # numa instalacao atual.
 discord_resources() {
     local raiz sub base id
+
+    if [ "$OS_NAME" = "Darwin" ]; then
+        macos_discord_resources
+        return 0
+    fi
 
     base="${XDG_CONFIG_HOME:-$HOME/.config}"
     for sub in \
@@ -242,10 +275,13 @@ discord_resources() {
 # O que passar em --location para o instalador do mod. Ele quer a pasta de cima, e no flatpak
 # quer o diretorio do app inteiro: e de la que ele descobre que aquilo e um flatpak e libera o
 # sandbox. Apontar direto para .../current/active/files/discord faz a liberacao nao acontecer,
-# e o Discord abre com erro de modulo.
+# e o Discord abre com erro de modulo. No macOS o Equilotl tambem quer o bundle inteiro
+# (find_discord_darwin.go espera o .app, nao o Contents por cima do Resources), do mesmo jeito
+# que quer o app inteiro no flatpak.
 install_location() {
     local resources="$1"
     case "$resources" in
+        */Contents/Resources) dirname "$(dirname "$resources")" ;;
         */current/active/*) printf '%s\n' "${resources%%/current/active/*}" ;;
         */app-*/resources)  dirname "$(dirname "$resources")" ;;
         */resources)        dirname "$resources" ;;
@@ -705,6 +741,13 @@ mod_settings_file() {
     local override="$(upper "$mod")_USER_DATA_DIR"
     if [ -n "${!override:-}" ]; then
         printf '%s\n' "${!override}/settings/settings.json"
+        return 0
+    fi
+
+    # No macOS o Electron resolve app.getPath("userData") para ~/Library/Application Support,
+    # nao para um diretorio ao estilo XDG.
+    if [ "$OS_NAME" = "Darwin" ]; then
+        printf '%s\n' "$HOME/Library/Application Support/$mod/settings/settings.json"
         return 0
     fi
 
