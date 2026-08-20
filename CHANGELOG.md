@@ -1,5 +1,19 @@
 # Changelog
 
+## [1.1.0](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.0.2...v1.1.0) (2026-08-20)
+
+
+### Features
+
+* **instalador:** achar o Discord moderno e suportar flatpak no Linux ([270cbfc](https://github.com/EduardoVasconceloss/StreamFix/commit/270cbfc05dce96c1913f5fd5dd67be6f73456359))
+
+
+### Bug Fixes
+
+* gravar as settings na chave StreamFix, nao na antiga ([14bc8dc](https://github.com/EduardoVasconceloss/StreamFix/commit/14bc8dc2bc7e326fe82718c56827d37b7a162602))
+* normalizar e validar a pasta de instalacao em vez de recusar array ([52e81c3](https://github.com/EduardoVasconceloss/StreamFix/commit/52e81c3d68a2354e61494d61a2b68e2c7b036d74))
+* publicar os scripts na release, nao so os .exe do Windows ([3411628](https://github.com/EduardoVasconceloss/StreamFix/commit/3411628f93865999746f212cedf832768256d1a5))
+
 ## [1.0.2](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.0.1...v1.0.2) (2026-08-20)
 
 
