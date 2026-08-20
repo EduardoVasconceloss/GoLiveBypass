@@ -450,31 +450,111 @@ choose_mod() {
     esac
 }
 
-ensure_toolchain() {
+# xcode-select -p so confere se o caminho das ferramentas de linha de comando existe -- nunca
+# invoca o git de verdade, entao nunca corre o risco de abrir o dialogo grafico de instalacao.
+# E por isso que ensure_toolchain usa esta funcao, e nao "have git", para decidir se o git do
+# macOS esta pronto (ver macos_missing_tools).
+macos_has_command_line_tools() {
+    xcode-select -p >/dev/null 2>&1
+}
+
+# So o git resolvido pelo stub do sistema (/usr/bin/git) corre o risco do dialogo grafico das
+# ferramentas de linha de comando do Xcode -- e so quando essas ferramentas ainda nao estao
+# instaladas. Um git resolvido em outro caminho (o do Homebrew, por exemplo, apos um "brew
+# install git") e um binario de verdade, seguro de usar mesmo sem as CLT. "command -v" so
+# resolve o PATH e nunca executa o binario, entao confere isso sem correr risco nenhum.
+macos_git_ready() {
+    macos_has_command_line_tools && return 0
+    local path
+    path="$(command -v git 2>/dev/null)" || return 1
+    [ "$path" != "/usr/bin/git" ]
+}
+
+# "command -v git" no macOS nao prova nada por si so: o sistema sempre tem o stub em
+# /usr/bin/git, e a primeira chamada a ele sem as ferramentas de linha de comando do Xcode
+# instaladas abre um dialogo grafico de instalacao -- que numa execucao sem ninguem de olho na
+# janela certa so fica pendurado. macos_git_ready() e quem sabe se o git vai funcionar, sem
+# correr esse risco.
+macos_missing_tools() {
+    macos_git_ready || printf 'git\n'
+    have node || printf 'node\n'
+    return 0
+}
+
+# A mesma falta de git/Node do Linux, so que resolvida diferente: la existem varios
+# gerenciadores de pacote, com nomes de pacote diferentes, e so instruir e a opcao razoavel. No
+# macOS existe um so gerenciador de fato (Homebrew), com um comando previsivel -- por isso aqui
+# o instalador vai alem de instruir e oferece instalar de verdade, atras da mesma confirmacao
+# que as outras operacoes invasivas do instalador ja usam. Instalar coisas no sistema de
+# alguem e a operacao mais invasiva que o instalador faz fora a injecao no Discord.
+macos_ensure_git_and_node() {
     local missing=()
+    local tool
+    while IFS= read -r tool; do
+        [ -n "$tool" ] && missing+=("$tool")
+    done < <(macos_missing_tools)
 
-    # git e sempre necessario, mesmo quando ja existe um checkout: o build roda "git
-    # rev-parse" pra gravar o hash na versao compilada, entao um checkout ja existente sem
-    # git instalado quebrava mais tarde no "pnpm build", sem contexto nenhum.
-    have git || missing+=("git")
-    have node || missing+=("node")
+    [ ${#missing[@]} -eq 0 ] && return 0
 
-    if [ ${#missing[@]} -gt 0 ]; then
-        warn "Faltando: ${missing[*]}"
+    warn "Faltando: ${missing[*]}"
 
-        local pkgs=()
-        local tool
-        for tool in "${missing[@]}"; do
-            if [ "$tool" = "node" ]; then pkgs+=("nodejs"); else pkgs+=("$tool"); fi
-        done
+    # Instalar o proprio Homebrew e bem mais invasivo que instalar dois pacotes por ele, e essa
+    # decisao e da pessoa: aqui so mostramos a linha oficial e paramos, sem rodar nada.
+    if ! have brew; then
+        printf '\n  %sInstalar isso precisa do Homebrew, que voce nao tem. Instale primeiro com:%s\n' "$C_DIM" "$C_OFF" >&2
+        printf '  %s  /bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"%s\n' "$C_DIM" "$C_OFF" >&2
+        printf '\n  %sDepois rode este instalador de novo.%s\n' "$C_DIM" "$C_OFF" >&2
+        fail "Sem Homebrew nao consigo instalar o que falta."
+    fi
 
-        printf '  %sInstale com o gerenciador da sua distro, por exemplo:%s\n' "$C_DIM" "$C_OFF" >&2
-        printf '  %s  sudo apt install %s%s\n' "$C_DIM" "${pkgs[*]}" "$C_OFF" >&2
-        printf '  %s  sudo pacman -S %s%s\n' "$C_DIM" "${pkgs[*]}" "$C_OFF" >&2
-        printf '  %s  sudo dnf install %s%s\n' "$C_DIM" "${pkgs[*]}" "$C_OFF" >&2
-        printf '\n  %sO Node precisa ser 22 ou mais novo. O pacote da distro costuma ser mais%s\n' "$C_DIM" "$C_OFF" >&2
-        printf '  %santigo que isso; nesse caso use nvm, fnm ou o repositorio do NodeSource.%s\n' "$C_DIM" "$C_OFF" >&2
-        fail "Instale o que falta e rode de novo."
+    printf '\n  %sVou instalar com o Homebrew:%s\n' "$C_BOLD" "$C_OFF" >&2
+    printf '  %s  brew install %s%s\n\n' "$C_DIM" "${missing[*]}" "$C_OFF" >&2
+    confirm "Pode instalar?" || fail "Instale na mao com: brew install ${missing[*]}"
+
+    step "brew install ${missing[*]}"
+    brew install "${missing[@]}" >&2 || fail "brew install falhou. Rode na mao: brew install ${missing[*]}"
+
+    # brew install git resolve por conta propria, sem precisar das CLT (macos_git_ready aceita
+    # o git do Homebrew direto). So falha aqui quando o git que sobrou de fato e o stub do
+    # sistema sem as ferramentas de linha de comando por tras -- exatamente o caso que travaria
+    # pendurado numa janela que ninguem viu, entao falhamos claro em vez disso.
+    macos_git_ready \
+        || fail "Ainda sem as ferramentas de linha de comando do Xcode. A primeira chamada ao git abre um dialogo grafico de instalacao -- procure essa janela (pode estar atras de outra) ou rode 'xcode-select --install' na mao."
+
+    have node || fail "Instalei mas o Node ainda nao aparece no PATH. Abra um terminal novo e rode de novo."
+
+    printf '  %sO Node precisa ser 22 ou mais novo. O que o Homebrew instala e sempre atual.%s\n' "$C_DIM" "$C_OFF" >&2
+}
+
+ensure_toolchain() {
+    if [ "$OS_NAME" = "Darwin" ]; then
+        macos_ensure_git_and_node
+    else
+        local missing=()
+
+        # git e sempre necessario, mesmo quando ja existe um checkout: o build roda "git
+        # rev-parse" pra gravar o hash na versao compilada, entao um checkout ja existente sem
+        # git instalado quebrava mais tarde no "pnpm build", sem contexto nenhum.
+        have git || missing+=("git")
+        have node || missing+=("node")
+
+        if [ ${#missing[@]} -gt 0 ]; then
+            warn "Faltando: ${missing[*]}"
+
+            local pkgs=()
+            local tool
+            for tool in "${missing[@]}"; do
+                if [ "$tool" = "node" ]; then pkgs+=("nodejs"); else pkgs+=("$tool"); fi
+            done
+
+            printf '  %sInstale com o gerenciador da sua distro, por exemplo:%s\n' "$C_DIM" "$C_OFF" >&2
+            printf '  %s  sudo apt install %s%s\n' "$C_DIM" "${pkgs[*]}" "$C_OFF" >&2
+            printf '  %s  sudo pacman -S %s%s\n' "$C_DIM" "${pkgs[*]}" "$C_OFF" >&2
+            printf '  %s  sudo dnf install %s%s\n' "$C_DIM" "${pkgs[*]}" "$C_OFF" >&2
+            printf '\n  %sO Node precisa ser 22 ou mais novo. O pacote da distro costuma ser mais%s\n' "$C_DIM" "$C_OFF" >&2
+            printf '  %santigo que isso; nesse caso use nvm, fnm ou o repositorio do NodeSource.%s\n' "$C_DIM" "$C_OFF" >&2
+            fail "Instale o que falta e rode de novo."
+        fi
     fi
 
     if have_pnpm; then return; fi

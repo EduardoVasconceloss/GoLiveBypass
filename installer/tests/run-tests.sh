@@ -884,6 +884,237 @@ test_do_install_nao_falha_cedo_equicord_macos_assume_yes() {
     fixture_teardown
 }
 
+# ------------------------------------------------------------ toolchain (Darwin): git e Node
+
+# Simula "command -v git" resolvendo para o caminho passado, sem executar o git de verdade --
+# so assim da para testar macos_git_ready() nos dois lados (stub do sistema vs. um git de
+# verdade, tipo o do Homebrew) sem depender de onde o git desta maquina de teste realmente
+# mora. "builtin command" repassa qualquer outro uso para o builtin de verdade.
+stub_git_path() {
+    GIT_PATH="$1"
+    # shellcheck disable=SC2317
+    command() {
+        if [ "$1" = "-v" ] && [ "$2" = "git" ]; then
+            [ -n "$GIT_PATH" ] && printf '%s\n' "$GIT_PATH"
+            return 0
+        fi
+        builtin command "$@"
+    }
+}
+
+test_macos_missing_tools_detecta_git_sem_clt() {
+    printf '\n== toolchain (Darwin): sem as ferramentas de linha de comando, falta git ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 1; }
+    have() { [ "$1" = "node" ]; }
+    stub_git_path "/usr/bin/git"
+
+    assert_eq "macos_missing_tools reporta git, nao 'command -v git'" "git" "$(macos_missing_tools)"
+
+    unset -f xcode-select have command
+    fixture_teardown
+}
+
+test_macos_missing_tools_git_do_homebrew_sem_clt_nao_falta() {
+    printf '\n== toolchain (Darwin): git do Homebrew sem CLT ja e suficiente ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 1; }
+    have() { [ "$1" = "node" ]; }
+    stub_git_path "/opt/homebrew/bin/git"
+
+    assert_eq "macos_missing_tools nao reporta git quando ele nao e o stub do sistema" "" "$(macos_missing_tools)"
+
+    unset -f xcode-select have command
+    fixture_teardown
+}
+
+test_macos_missing_tools_detecta_node() {
+    printf '\n== toolchain (Darwin): sem node, falta node ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 0; }
+    have() { [ "$1" != "node" ]; }
+
+    assert_eq "macos_missing_tools reporta node" "node" "$(macos_missing_tools)"
+
+    unset -f xcode-select have
+    fixture_teardown
+}
+
+test_macos_missing_tools_nada_faltando() {
+    printf '\n== toolchain (Darwin): git e node presentes, nada falta ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 0; }
+    have() { return 0; }
+
+    assert_eq "macos_missing_tools nao reporta nada" "" "$(macos_missing_tools)"
+
+    unset -f xcode-select have
+    fixture_teardown
+}
+
+test_macos_ensure_toolchain_sem_homebrew_mostra_linha_oficial_e_para() {
+    printf '\n== toolchain (Darwin): sem Homebrew, mostra a linha oficial e para ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 1; }
+    have() { case "$1" in node) return 0 ;; *) return 1 ;; esac; }
+    stub_git_path "/usr/bin/git"
+
+    local rc=0 saida
+    saida="$(macos_ensure_git_and_node </dev/null 2>&1)"; rc=$?
+
+    assert_eq "sai com erro" "1" "$rc"
+    case "$saida" in
+        *"Homebrew/install"*) assert_true "mostra a linha oficial de instalacao do Homebrew" true ;;
+        *) assert_true "mostra a linha oficial de instalacao do Homebrew" false ;;
+    esac
+
+    unset -f xcode-select have command
+    fixture_teardown
+}
+
+test_macos_ensure_toolchain_nega_confirmacao_nao_instala() {
+    printf '\n== toolchain (Darwin): recusando a confirmacao, nao instala nada ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 1; }
+    have() { case "$1" in node) return 0 ;; brew) return 0 ;; *) return 1 ;; esac; }
+    stub_git_path "/usr/bin/git"
+    brew() { printf 'BREW_CALLED\n' >&2; return 0; }
+
+    local rc=0 saida
+    saida="$(printf 'n\n' | macos_ensure_git_and_node 2>&1)"; rc=$?
+
+    assert_eq "sai com erro" "1" "$rc"
+    case "$saida" in
+        *BREW_CALLED*) assert_true "nao roda brew install sem confirmacao" false ;;
+        *) assert_true "nao roda brew install sem confirmacao" true ;;
+    esac
+
+    unset -f xcode-select have brew command
+    fixture_teardown
+}
+
+test_macos_ensure_toolchain_assume_yes_nao_pergunta_e_instala() {
+    printf '\n== toolchain (Darwin): --yes nao pergunta e instala com o Homebrew ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 1; }
+    have() { case "$1" in node) return 0 ;; brew) return 0 ;; *) return 1 ;; esac; }
+    stub_git_path "/usr/bin/git"
+    brew() { printf 'BREW_CALLED\n' >&2; return 0; }
+
+    local prev="$ASSUME_YES" saida
+    ASSUME_YES=1
+    saida="$(macos_ensure_git_and_node </dev/null 2>&1)"
+    ASSUME_YES="$prev"
+
+    case "$saida" in
+        *BREW_CALLED*) assert_true "roda brew install sem perguntar, como as outras confirmacoes em --yes" true ;;
+        *) assert_true "roda brew install sem perguntar, como as outras confirmacoes em --yes" false ;;
+    esac
+
+    unset -f xcode-select have brew command
+    fixture_teardown
+}
+
+test_macos_ensure_toolchain_clt_ainda_falta_falha_com_mensagem_clara() {
+    printf '\n== toolchain (Darwin): CLT ainda ausente depois do brew, falha em vez de travar ==\n'
+    fixture_setup Darwin
+    # xcode-select nunca "resolve" nesta simulacao, e o brew install nao move o git do lugar --
+    # reproduz a maquina em que o brew install do git nao basta porque o git que sobra ainda e
+    # o stub do sistema, sem as ferramentas de linha de comando do Xcode por tras.
+    xcode-select() { return 1; }
+    have() { case "$1" in node) return 0 ;; brew) return 0 ;; *) return 1 ;; esac; }
+    stub_git_path "/usr/bin/git"
+    brew() { return 0; }
+
+    local prev="$ASSUME_YES" rc=0 saida
+    ASSUME_YES=1
+    saida="$(macos_ensure_git_and_node </dev/null 2>&1)"; rc=$?
+    ASSUME_YES="$prev"
+
+    assert_eq "sai com erro em vez de travar" "1" "$rc"
+    case "$saida" in
+        *"dialogo"*) assert_true "explica o dialogo grafico em vez de so travar" true ;;
+        *) assert_true "explica o dialogo grafico em vez de so travar" false ;;
+    esac
+
+    unset -f xcode-select have brew command
+    fixture_teardown
+}
+
+test_macos_ensure_toolchain_brew_resolve_git_mesmo_sem_clt() {
+    printf '\n== toolchain (Darwin): brew install git basta mesmo sem as CLT ==\n'
+    fixture_setup Darwin
+    # As ferramentas de linha de comando do Xcode nunca aparecem nesta simulacao, mas o brew
+    # install troca o git que "command -v" acha pelo do Homebrew -- que nao e o stub do
+    # sistema, e por isso nao precisa das CLT. Regressao do bug em que o instalador so conferia
+    # xcode-select -p depois do brew install e falhava mesmo com um git ja funcionando.
+    xcode-select() { return 1; }
+    have() { case "$1" in node) return 0 ;; brew) return 0 ;; *) return 1 ;; esac; }
+    stub_git_path "/usr/bin/git"
+    brew() { GIT_PATH="/opt/homebrew/bin/git"; return 0; }
+
+    local prev="$ASSUME_YES" rc=0 saida
+    ASSUME_YES=1
+    saida="$(macos_ensure_git_and_node </dev/null 2>&1)"; rc=$?
+    ASSUME_YES="$prev"
+
+    assert_eq "termina sem erro: o git do Homebrew ja basta" "0" "$rc"
+
+    unset -f xcode-select have brew command
+    fixture_teardown
+}
+
+test_macos_ensure_toolchain_node_some_do_path_apos_brew() {
+    printf '\n== toolchain (Darwin): Node continua fora do PATH depois do brew, mensagem clara ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 0; }
+    have() { case "$1" in brew) return 0 ;; *) return 1 ;; esac; }
+    brew() { return 0; }
+
+    local prev="$ASSUME_YES" rc=0 saida
+    ASSUME_YES=1
+    saida="$(macos_ensure_git_and_node </dev/null 2>&1)"; rc=$?
+    ASSUME_YES="$prev"
+
+    assert_eq "sai com erro" "1" "$rc"
+    case "$saida" in
+        *"PATH"*) assert_true "explica que o Node nao apareceu no PATH" true ;;
+        *) assert_true "explica que o Node nao apareceu no PATH" false ;;
+    esac
+
+    unset -f xcode-select have brew
+    fixture_teardown
+}
+
+test_macos_ensure_toolchain_sucesso_comunica_versao_minima_do_node() {
+    printf '\n== toolchain (Darwin): sucesso ainda comunica a versao minima do Node ==\n'
+    fixture_setup Darwin
+    xcode-select() { return 0; }
+    NODE_OK=0
+    have() {
+        case "$1" in
+            node) [ "$NODE_OK" -eq 1 ] ;;
+            brew) return 0 ;;
+            *) return 1 ;;
+        esac
+    }
+    brew() { NODE_OK=1; return 0; }
+
+    local prev="$ASSUME_YES" rc=0 saida
+    ASSUME_YES=1
+    saida="$(macos_ensure_git_and_node </dev/null 2>&1)"; rc=$?
+    ASSUME_YES="$prev"
+
+    assert_eq "termina sem erro" "0" "$rc"
+    case "$saida" in
+        *"22"*) assert_true "comunica a versao minima do Node" true ;;
+        *) assert_true "comunica a versao minima do Node" false ;;
+    esac
+
+    unset -f xcode-select have brew
+    fixture_teardown
+}
+
 # ------------------------------------------------------------------------------- sourcing
 
 test_guarda_de_sourcing() {
@@ -936,6 +1167,17 @@ test_select_persistence_oferece_temporario_equicord_macos
 test_do_install_falha_cedo_vencord_macos_assume_yes
 test_do_install_nao_falha_cedo_vencord_ja_injetado_macos_assume_yes
 test_do_install_nao_falha_cedo_equicord_macos_assume_yes
+test_macos_missing_tools_detecta_git_sem_clt
+test_macos_missing_tools_git_do_homebrew_sem_clt_nao_falta
+test_macos_missing_tools_detecta_node
+test_macos_missing_tools_nada_faltando
+test_macos_ensure_toolchain_sem_homebrew_mostra_linha_oficial_e_para
+test_macos_ensure_toolchain_nega_confirmacao_nao_instala
+test_macos_ensure_toolchain_assume_yes_nao_pergunta_e_instala
+test_macos_ensure_toolchain_clt_ainda_falta_falha_com_mensagem_clara
+test_macos_ensure_toolchain_brew_resolve_git_mesmo_sem_clt
+test_macos_ensure_toolchain_node_some_do_path_apos_brew
+test_macos_ensure_toolchain_sucesso_comunica_versao_minima_do_node
 test_checkout_mod
 test_guarda_de_sourcing
 
