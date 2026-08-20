@@ -467,13 +467,13 @@ set_plugin_settings() {
             }
         }
 
-        const plugin = settings.plugins && settings.plugins.GoLiveBypass ? settings.plugins.GoLiveBypass : {};
+        const plugin = settings.plugins && settings.plugins.StreamFix ? settings.plugins.StreamFix : {};
         plugin.enabled = true;
         plugin.proxy = process.env.GLB_PROXY || "";
         if (plugin.excludedCountries === undefined) plugin.excludedCountries = "BR";
 
         settings.plugins = settings.plugins || {};
-        settings.plugins.GoLiveBypass = plugin;
+        settings.plugins.StreamFix = plugin;
         fs.writeFileSync(file, JSON.stringify(settings, null, 4));
     ' && step "Plugin ativado em $file" || warn "Nao mexi no $file. Ative o StreamFix na mao em Configuracoes > Plugins."
 }

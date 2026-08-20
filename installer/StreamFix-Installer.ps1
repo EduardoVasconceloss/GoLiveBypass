@@ -79,7 +79,7 @@ function Show-Banner {
     Write-Host ''
     Write-Host '  StreamFix' -ForegroundColor Cyan
     Write-Host '  Go Live e camera de volta no Discord' -ForegroundColor DarkGray
-    Write-Host '  https://github.com/EduardoVasconceloss/GoLiveBypass (fork de bezumiya/GoLiveBypass)' -ForegroundColor DarkGray
+    Write-Host '  https://github.com/EduardoVasconceloss/StreamFix (fork de bezumiya/GoLiveBypass)' -ForegroundColor DarkGray
     Write-Host ''
 }
 
@@ -702,7 +702,10 @@ function Set-PluginSettings($root, $proxy) {
         $settings | Add-Member -NotePropertyName plugins -NotePropertyValue ([pscustomobject]@{}) -Force
     }
 
-    $existing = $settings.plugins.PSObject.Properties['GoLiveBypass']
+    # A chave e o campo "name:" do plugin, que hoje e StreamFix. Escrever no nome antigo so
+    # funcionava porque migrateLegacySettings() movia depois -- e ela nao move quando a chave
+    # nova ja existe, entao reinstalar pra trocar a proxy escrevia num lugar que ninguem le.
+    $existing = $settings.plugins.PSObject.Properties['StreamFix']
     $plugin = if ($existing) { $existing.Value } else { [pscustomobject]@{} }
 
     $plugin | Add-Member -NotePropertyName enabled -NotePropertyValue $true -Force
@@ -711,12 +714,12 @@ function Set-PluginSettings($root, $proxy) {
         $plugin | Add-Member -NotePropertyName excludedCountries -NotePropertyValue 'BR' -Force
     }
 
-    $settings.plugins | Add-Member -NotePropertyName GoLiveBypass -NotePropertyValue $plugin -Force
+    $settings.plugins | Add-Member -NotePropertyName StreamFix -NotePropertyValue $plugin -Force
 
     Save-Text $file ($settings | ConvertTo-Json -Depth 10)
 
     $written = $null
-    try { $written = (Get-Content -LiteralPath $file -Raw | ConvertFrom-Json).plugins.GoLiveBypass } catch { }
+    try { $written = (Get-Content -LiteralPath $file -Raw | ConvertFrom-Json).plugins.StreamFix } catch { }
     if ($written -and $written.enabled) {
         Write-Step "Plugin ativado em $file"
     } else {
