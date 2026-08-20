@@ -131,7 +131,7 @@ function StreamRegionPicker() {
 function AboutPlugin() {
     return (
         <Paragraph>
-            StreamFix started as a fork of bezumiya's GoLiveBypass. Source and issues on <MaskedLink href="https://github.com/EduardoVasconceloss/GoLiveBypass">GitHub</MaskedLink>; the original project is at <MaskedLink href="https://github.com/bezumiya/GoLiveBypass">bezumiya/GoLiveBypass</MaskedLink>.
+            Source and issues on <MaskedLink href="https://github.com/EduardoVasconceloss/StreamFix">GitHub</MaskedLink>. StreamFix is a fork of <MaskedLink href="https://github.com/bezumiya/GoLiveBypass">bezumiya/GoLiveBypass</MaskedLink>.
         </Paragraph>
     );
 }
@@ -354,7 +354,10 @@ async function buildReport() {
 export default definePlugin({
     name: "StreamFix",
     description: "Turns Go Live and camera back on for Brazilian accounts by neutralising Discord's video guard, and keeps your calls on the region you pick.",
-    authors: [{ name: "bezumiya", id: 1366453661970071633n }],
+    authors: [
+        { name: "Eduardo Vasconcelos", id: 389561533342023681n },
+        { name: "bezumiya", id: 1366453661970071633n }
+    ],
     tags: ["Voice", "Privacy"],
     settings,
     settingsAboutComponent: AboutPlugin,
