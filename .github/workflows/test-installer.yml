@@ -1,0 +1,25 @@
+name: Testar instalador Linux
+
+# Roda os testes de caracterizacao da descoberta e a analise estatica de shell a cada PR, para
+# pegar bashismo e regressao de descoberta antes da revisao humana. Ver installer/tests/.
+
+on:
+  pull_request:
+    paths:
+      - "installer/streamfix-installer.sh"
+      - "installer/tests/**"
+      - ".github/workflows/test-installer.yml"
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Rodar os testes de descoberta
+        run: bash installer/tests/run-tests.sh
+
+      - name: ShellCheck
+        uses: ludeeus/action-shellcheck@master
+        with:
+          scandir: installer

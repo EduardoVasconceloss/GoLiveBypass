@@ -27,6 +27,12 @@ EQUICORD_GIT="https://github.com/Equicord/Equicord"
 VENCORD_GIT="https://github.com/Vendicated/Vencord"
 FLATPAK_IDS=("com.discordapp.Discord" "com.discordapp.DiscordPTB" "com.discordapp.DiscordCanary")
 
+# Vazio em producao. Os testes exportam isto antes de carregar o script e prefixam as raizes
+# absolutas que a descoberta varre (/usr/..., /opt/..., /var/lib/flatpak/...), para rodar
+# contra uma arvore de fixtures sem tocar no sistema de arquivos de verdade. As raizes que ja
+# sao relativas a $HOME nao precisam disto: o teste aponta o proprio HOME para a fixture.
+FS_PREFIX="${FS_PREFIX:-}"
+
 MODE="menu"
 MOD=""
 SOURCE=""
@@ -179,10 +185,10 @@ discord_resources() {
 
     # Pacotes que ainda embutem o app: discord_arch_electron e os AUR de PTB e Canary.
     for raiz in \
-        /usr/share/discord /usr/share/discord-ptb /usr/share/discord-canary \
-        /usr/lib/discord /usr/lib/discord-ptb /usr/lib/discord-canary /usr/lib64/discord \
-        /opt/discord /opt/Discord /opt/discord-ptb /opt/discord-canary \
-        /usr/local/share/discord \
+        "$FS_PREFIX/usr/share/discord" "$FS_PREFIX/usr/share/discord-ptb" "$FS_PREFIX/usr/share/discord-canary" \
+        "$FS_PREFIX/usr/lib/discord" "$FS_PREFIX/usr/lib/discord-ptb" "$FS_PREFIX/usr/lib/discord-canary" "$FS_PREFIX/usr/lib64/discord" \
+        "$FS_PREFIX/opt/discord" "$FS_PREFIX/opt/Discord" "$FS_PREFIX/opt/discord-ptb" "$FS_PREFIX/opt/discord-canary" \
+        "$FS_PREFIX/usr/local/share/discord" \
         "$HOME/.local/share/discord" "$HOME/Discord" "$HOME/discord" \
         "$HOME/.local/share/DiscordPTB" "$HOME/.local/share/DiscordCanary"
     do
@@ -200,7 +206,7 @@ discord_resources() {
     # sem reescrever nenhum arquivo, entao os objetos do repositorio ficam intactos. E o que o
     # instalador do Equicord e o do Vencord ja fazem ha tempos. O preco e que um
     # `flatpak update` refaz o deploy e leva a injecao junto.
-    for raiz in /var/lib/flatpak/app "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/app"; do
+    for raiz in "$FS_PREFIX/var/lib/flatpak/app" "${XDG_DATA_HOME:-$HOME/.local/share}/flatpak/app"; do
         [ -d "$raiz" ] || continue
         for id in "${FLATPAK_IDS[@]}"; do
             for sub in "$raiz/$id"/current/active/files/*/resources; do
@@ -950,11 +956,16 @@ main_menu() {
     esac
 }
 
-banner
-case "$MODE" in
-    install) do_install "$(find_checkout || true)" ;;
-    uninstall) do_uninstall ;;
-    restore) do_restore_everything ;;
-    *) main_menu ;;
-esac
-printf '\n'
+# Guarda de sourcing: os testes carregam este arquivo com "." para chamar as funcoes de
+# descoberta sem disparar o instalador inteiro. BASH_SOURCE[0] so e igual a $0 quando o
+# script e o processo executado diretamente, nao quando outro script o esta carregando.
+if [ "${BASH_SOURCE[0]}" = "$0" ]; then
+    banner
+    case "$MODE" in
+        install) do_install "$(find_checkout || true)" ;;
+        uninstall) do_uninstall ;;
+        restore) do_restore_everything ;;
+        *) main_menu ;;
+    esac
+    printf '\n'
+fi

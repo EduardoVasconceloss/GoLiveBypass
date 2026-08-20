@@ -31,6 +31,16 @@ Depois de mexer no código, `pnpm build` de novo e reinicie o Discord pela bande
 3. Teste manualmente com um Discord de verdade antes de abrir o PR: o plugin mexe em rede e em travas do próprio Discord, e isso não tem como validar só lendo o código.
 4. Descreva no PR **o que mudou e por quê** — o "porquê" é o que mais falta em revisão de código de rede/proxy.
 
+## Testes do instalador Linux
+
+A camada de descoberta do `installer/streamfix-installer.sh` (achar o Discord, resolver o caminho do mod, identificar qual mod um checkout é) tem testes de caracterização em shell puro, sem framework, contra uma árvore de fixtures — não precisa de Discord instalado nem de rede:
+
+```bash
+bash installer/tests/run-tests.sh
+```
+
+O CI roda o mesmo comando e o ShellCheck em todo PR que toca o instalador. Isso não substitui o item 3 acima: os testes cobrem só a descoberta, e o resto do fluxo (injeção, proxy, persistência) continua exigindo um Discord de verdade.
+
 ## Convenção de commits
 
 O histórico segue [Conventional Commits](https://www.conventionalcommits.org/), com alguns prefixos específicos deste repositório além dos padrão (`feat`, `fix`, `docs`, `chore`, `ci`, `refactor`):
