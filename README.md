@@ -1,8 +1,11 @@
 # StreamFix — Bypass do Go Live no Discord (Brasil)
 
+[![Release](https://img.shields.io/github/v/release/EduardoVasconceloss/StreamFix?style=for-the-badge&label=vers%C3%A3o&color=5865F2)](https://github.com/EduardoVasconceloss/StreamFix/releases/latest)
+[![Licença](https://img.shields.io/github/license/EduardoVasconceloss/StreamFix?style=for-the-badge&color=5865F2)](LICENSE)
+
 Plugin para **Equicord** e **Vencord**, feito por um desenvolvedor brasileiro, que **devolve o Go Live e a câmera para usuários brasileiros**. São duas travas: o Discord desabilita os próprios botões, e o servidor recusa a transmissão. O plugin desarma a primeira direto no cliente, e a segunda mandando **apenas o WebSocket de gateway** por uma saída fora do Brasil — todo o resto do Discord, e todo o resto do computador, continua saindo direto na velocidade normal, inclusive durante a abertura do app.
 
-> **English summary below / Resumo em inglês no final.**
+> **English summary at the end of this document.**
 
 ## A instalação inteira, do começo ao fim
 
@@ -14,27 +17,13 @@ Um script faz tudo: acha o seu Equicord ou Vencord, instala o plugin, compila e 
 
 ## Índice
 
-**Quero instalar agora**
-
 - [Instalação automática](#instalação-automática-recomendado) — um script faz tudo sozinho, no Windows e no Linux
 - [Instalação manual, passo a passo](#instalação-passo-a-passo-completo) — se preferir fazer cada etapa à mão
 - [Dependências](#dependências-o-que-baixar-e-como-instalar) — só para o caminho manual
-
-**Já instalei**
-
 - [Configuração](#configuração) — região da call, região da transmissão, proxy
 - [Uso](#uso) — o que fazer depois de instalar
 - [Solução de problemas](#solução-de-problemas) — Discord travado, transmissão que não sobe, plugin sumido
-
-**Quero entender antes**
-
-- [Por que este plugin existe](#por-que-este-plugin-existe)
-- [Como funciona](#como-funciona) — as duas travas e como cada uma é desarmada
-- [Avisos importantes](#avisos-importantes) — o que o plugin faz com a sua conexão, e os riscos
-
-**Projeto**
-
-- [Estrutura](#estrutura) · [Licença](#licença) · [Origem](#origem) · [Agradecimentos](#agradecimentos)
+- **Como funciona e avisos importantes** — recolhidos logo abaixo do índice; clique para abrir se quiser entender por baixo dos panos antes de instalar
 
 ## Por que este plugin existe
 
@@ -42,11 +31,14 @@ Em agosto de 2026, a ANPD [ordenou que o Discord suspendesse as transmissões ao
 
 O StreamFix nasce dessa luta. Ele é uma ferramenta de **resistência à censura**: devolve o que foi cortado por canetaço, sem pedir licença e sem entregar o resto da sua conexão em troca.
 
-**O que ele entrega, verificado na prática:** como o WebSocket de gateway nasce fora do Brasil, o **Go Live e a câmera voltam a funcionar** para contas brasileiras — veja a seção abaixo.
+**O que ele entrega, verificado na prática:** como o WebSocket de gateway nasce fora do Brasil, o **Go Live e a câmera voltam a funcionar** para contas brasileiras — veja a seção "Como funciona" abaixo.
 
 Se você também quer que a **autenticação** aconteça atrás da saída, e não pelo seu IP real, mude **Session routing** para `Gateway and login`. Não é o padrão porque custa tempo de abertura, e porque login por proxy pública costuma render captcha.
 
-## Go Live no Brasil: por que funciona
+<details>
+<summary><strong>📖 Como funciona</strong> — as duas travas, como o roteamento é feito, e como as saídas são escolhidas (clique para expandir)</summary>
+
+### Go Live no Brasil: por que funciona
 
 Testes práticos mostram que o bloqueio do Go Live funciona assim:
 
@@ -58,30 +50,21 @@ Ou seja, o bypass manual "ligar VPN, abrir o Discord, entrar na call, desligar a
 
 **Ressalvas honestas:**
 
-- A liberação vale enquanto o WebSocket do gateway continuar vivo, e ele continua roteado o tempo todo. Se cair e reconectar (queda de internet, notebook suspenso), o socket novo nasce pela mesma saída e a liberação sobrevive. Ctrl+R também. Isso é uma mudança em relação às versões que aplicavam proxy só no boot, onde qualquer reconexão custava o Go Live até reiniciar o app.
+- A liberação vale enquanto o WebSocket do gateway continuar vivo, e ele continua roteado o tempo todo. Se cair e reconectar (queda de internet, notebook suspenso), o socket novo nasce pela mesma saída e a liberação sobrevive. Ctrl+R também.
 - Isso depende de comportamento atual do Discord, que pode mudar a qualquer momento.
 - Usar proxy/VPN para contornar a restrição pode violar os Termos de Serviço do Discord. Risco de punição à conta é baixo, mas existe — considere usar uma conta secundária.
 
-## Avisos importantes
-
-- **Só funciona no Discord para computador** com Equicord ou Vencord injetado. Vesktop e Equibop não são suportados pelos instaladores: eles trazem o mod embutido e não carregam de um checkout. Não funciona na versão de navegador/extensão.
-- **Proxies gratuitas são fracas para anonimato**: o operador da proxy vê seus metadados de conexão, muitas estão mortas ou lentas, e o Discord pode pedir captcha para IPs de proxies públicas. Para anonimato real, **use Tor**.
-- Usar clientes modificados viola os Termos de Serviço do Discord. Use por sua conta e risco.
-- A saída cobre **apenas o gateway**. No padrão, o seu login e todo o resto do tráfego saem pelo seu IP real. Se você quer que a autenticação também vá escondida, mude **Session routing** para `Gateway and login` — ciente de que aí o boot fica mais lento.
-- **O plugin nunca te deixa sem Discord.** A saída morrendo custa o Go Live, não o app — o roteador local cai sozinho para conexão direta, e isso é coberto por teste. Não existe mais prazo de 120 segundos nem marca de boot, porque não existe mais o cenário que eles cobriam, o de uma proxy quebrada segurando o Discord inteiro.
-- **Quem opera a saída vê o seu tráfego de gateway.** É pouca coisa em bytes e vai toda dentro de TLS, mas é o canal por onde passam suas mensagens em tempo real. Uma proxy gratuita significa um desconhecido nesse lugar. Um servidor seu, ou o Tor, não.
-
-## Como funciona
+### As duas travas
 
 São duas travas independentes, e o plugin desarma as duas de formas diferentes.
 
-### Trava 1: o cliente se auto-bloqueia
+#### Trava 1: o cliente se auto-bloqueia
 
 O Discord embarca um experimento de usuário que desliga vídeo. Quando o servidor te coloca nele, o cliente desabilita sozinho os botões de câmera e Go Live: é o `MediaEngineStore.supportsInApp(VIDEO)` que passa a retornar falso, e com ele o `canGoLive`.
 
 O plugin esvazia a tabela de variações desse experimento. Qualquer bucket que o servidor atribua passa a cair na configuração padrão, que tem vídeo ligado. Isso destrava o cliente inteiro de uma vez, porque todos os consumidores leem do mesmo lugar.
 
-### Trava 2: o servidor recusa a transmissão
+#### Trava 2: o servidor recusa a transmissão
 
 Destravar o cliente não basta: o servidor decide separadamente se você pode transmitir, e essa decisão é tomada **uma única vez, quando você entra no canal de voz**, a partir do IP de origem da **conexão de gateway** (o WebSocket que carrega o `VOICE_STATE_UPDATE`). Depois disso não há reavaliação: o servidor de voz só transporta mídia por UDP.
 
@@ -92,7 +75,7 @@ O `session.setProxy` do Electron vale para a sessão inteira. Ele não sabe dize
 O Chromium tem uma segunda porta de entrada que resolve as duas coisas: **PAC**. Em `pac_script`, o campo `pacScript` recebe uma URL, e a resposta dela é uma função `FindProxyForURL(url, host)` que decide **por host**. É só disso que o plugin precisa:
 
 1. Um **SOCKS5 local**, na abertura do app, que recebe só o que o PAC mandar e decide na hora por onde sair.
-2. Um **PAC embutido numa `data:` URL** — sem servidor, sem arquivo, sem busca — dizendo que `gateway.discord.gg` vai para esse roteador e que **qualquer outro host segue a regra que o sistema já usava**, lida pelo `resolveProxy` antes de tudo. Quem está atrás de proxy corporativo não perde o Discord.
+2. Um **PAC embutido numa `data:` URL** — sem servidor, sem arquivo, sem busca — dizendo que os hosts de gateway (`gateway.discord.gg` e `remote-auth-gateway.discord.gg`) vão para esse roteador e que **qualquer outro host segue a regra que o sistema já usava**, lida pelo `resolveProxy` antes de tudo. Quem está atrás de proxy corporativo não perde o Discord. Com **Session routing** em `Gateway and login`, o `discord.com` (e os equivalentes de Canary e PTB) entra nessa lista enquanto você autentica, e sai dela assim que a sessão abre.
 
 Subir o roteador leva milissegundos, então ele está de pé muito antes do gateway nascer. A escolha da saída acontece **depois**, em paralelo com o Discord carregando. Quando o gateway chega no roteador antes de existir saída, ele fica segurado ali (até 12 segundos) enquanto o resto do app carrega na velocidade normal. É a inversão que interessa — em vez do app inteiro esperar a proxy, uma única conexão espera, e ela é justamente a que precisa esperar.
 
@@ -109,9 +92,9 @@ O que **não** dá para verificar sem uma conta bloqueada de verdade: se rotear 
 
 A ordem é a seguinte — a proxy que você escreveu, depois as que já funcionaram antes, depois um Tor local, depois a lista gratuita.
 
-- **As que já funcionaram ficam guardadas.** Até cinco delas, com a latência medida, em `native-settings.json`. No boot seguinte todas são testadas juntas e a primeira a responder ganha. A busca cara na lista gratuita acontece com a sessão já aberta, para reabastecer o pote, e não mais no caminho da abertura do app.
-- **Um teste só, em vez de dois.** A validação bate em `cloudflare.com/cdn-cgi/trace`, que responde em cerca de 200 bytes e já prova as quatro coisas de uma vez: o túnel SOCKS abre, o TLS fecha com certificado válido (proxy que intercepta morre aqui), veio HTTP 200, e de que país ela sai. A versão anterior gastava duas conexões para saber o mesmo, uma no `discord.com` e outra no `ifconfig.co`.
-- **Candidatas correm juntas.** Doze por vez, e a primeira aceitável ganha. Antes o teste de país rodava uma por vez, depois do lote inteiro terminar, o que sozinho podia somar um minuto.
+- **As que já funcionaram ficam guardadas.** Até cinco delas, com a latência medida, em `native-settings.json`, e cada uma vale por 24 horas. No boot seguinte todas são testadas juntas e a primeira a responder ganha. A busca cara na lista gratuita acontece com a sessão já aberta, para reabastecer o pote, e não mais no caminho da abertura do app.
+- **Um teste só, em vez de dois.** A validação bate em `cloudflare.com/cdn-cgi/trace`, que responde em cerca de 200 bytes e já prova as quatro coisas de uma vez: o túnel SOCKS abre, o TLS fecha com certificado válido (proxy que intercepta morre aqui), veio HTTP 200, e de que país ela sai.
+- **Candidatas correm juntas.** Doze por vez, e a primeira aceitável ganha.
 - A lista da ProxyScrape já traz `alive`, `uptime` e `timeout`, e o plugin **ranqueia por esses campos** (uptime >= 90, timeout <= 1500ms) em vez de sortear.
 - Descarta a porta 4145: numa amostra medida, 14 de 14 proxies nessa porta interceptavam TLS com certificado forjado.
 - Confirma o **país de saída real**, porque o `countryCode` da lista descreve o IP de entrada, que frequentemente é diferente do de saída.
@@ -125,14 +108,31 @@ Rotear só um host muda o pior caso. Uma saída ruim agora atinge uma conexão, 
 - **O roteador local cai para direto sozinho.** Se a saída não abrir, ou se ela demorar demais para ser escolhida, ele conecta ao destino sem intermediário — custa o Go Live daquela sessão, e nada além. Recusar seria custar o Discord, porque a conexão em questão é o gateway.
 - **A rede de segurança vive dentro do roteador, e não numa alternativa do PAC.** O host roteado sai por ele e ponto, sem `DIRECT` depois do ponto e vírgula. Ter essa alternativa custou uma sessão inteira durante o desenvolvimento: uma saída gratuita falhou uma vez, o Chromium marcou o SOCKS local como ruim, e a partir dali mandou tudo pela alternativa sem avisar ninguém — PAC no lugar, roteador escutando, e nenhuma conexão passando por ele.
 - **Nada é aplicado fora do Discord.** Todo host que não está na lista recebe exatamente a regra que já valia antes do plugin existir.
-- **Não existe mais prazo de 120 segundos**, porque não existe mais o cenário em que uma proxy quebrada segurava o app inteiro e precisava ser arrancada à força.
-- **Não existe mais marca de boot.** Ela protegia contra o mesmo cenário, e tinha um efeito colateral ruim — qualquer inicialização que não terminasse (fechar o Discord na tela de login, por exemplo) fazia a inicialização seguinte se recusar a aplicar proxy, em silêncio. Na prática dava para ficar alternando entre um boot que libera e um que não libera sem entender o motivo. Quem vem de uma versão anterior pode apagar `bootPending` e `verifiedProxy` do `native-settings.json`, que não são mais lidos.
+
+</details>
+
+<details>
+<summary><strong>⚠️ Avisos importantes</strong> (clique para expandir)</summary>
+
+- **Só funciona no Discord para computador** com Equicord ou Vencord injetado. Vesktop e Equibop não são suportados pelos instaladores: eles trazem o mod embutido e não carregam de um checkout. Não funciona na versão de navegador/extensão.
+- **Proxies gratuitas são fracas para anonimato**: o operador da proxy vê seus metadados de conexão, muitas estão mortas ou lentas, e o Discord pode pedir captcha para IPs de proxies públicas. Para anonimato real, **use Tor**.
+- Usar clientes modificados viola os Termos de Serviço do Discord. Use por sua conta e risco.
+- A saída cobre **apenas o gateway**. No padrão, o seu login e todo o resto do tráfego saem pelo seu IP real. Se você quer que a autenticação também vá escondida, mude **Session routing** para `Gateway and login` — ciente de que aí o boot fica mais lento.
+- **O plugin nunca te deixa sem Discord.** A saída morrendo custa o Go Live, não o app — o roteador local cai sozinho para conexão direta, e isso é coberto por teste.
+- **Quem opera a saída vê o seu tráfego de gateway.** É pouca coisa em bytes e vai toda dentro de TLS, mas é o canal por onde passam suas mensagens em tempo real. Uma proxy gratuita significa um desconhecido nesse lugar. Um servidor seu, ou o Tor, não.
+
+</details>
 
 ## Instalação automática (recomendado)
 
 Um script encontra sozinho o Equicord ou o Vencord que você tem, instala o plugin, compila e injeta. Se você não tiver nenhum dos dois, ele pergunta qual você quer e instala junto.
 
 **Windows, jeito mais simples:** baixe o [`StreamFix-Installer.bat`](installer/StreamFix-Installer.bat) e dê dois cliques. Ele libera a execução só para aquele processo (`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`), baixa o `.ps1` se ele não estiver do lado, e roda tudo.
+
+**Windows, com janela:** a página de [**releases**](https://github.com/EduardoVasconceloss/StreamFix/releases/latest) traz `StreamFix-Installer-GUI.exe` (com janela) e `StreamFix-Installer.exe` (terminal), compilados pelo GitHub Actions a partir do código deste repositório, com um `SHA256SUMS.txt` para conferir.
+
+> [!NOTE]
+> O Windows pode bloquear esses `.exe` — SmartScreen avisando "fornecedor desconhecido", ou o **Controle Inteligente de Aplicativos** (padrão em instalações novas do Windows 11) recusando de vez, sem opção de executar mesmo assim. O motivo é o mesmo nos dois casos: o executável ainda não é assinado digitalmente. Enquanto a assinatura não sai, use o `.bat` acima ou o `.ps1` abaixo — é o mesmo código, interpretado em vez de compilado, e não passa por esse bloqueio.
 
 **Linux:**
 
@@ -263,7 +263,7 @@ O plugin **só funciona no app de computador** (ele usa recursos do Electron que
 
 **Não é necessário.** Por padrão o plugin escolhe e testa uma proxy gratuita sozinho, sem nenhuma dependência extra.
 
-O Tor é só uma opção para quem quer mais estabilidade: ele é mais rápido e não morre no meio do caminho como as proxies públicas. Se você já tiver o [Tor Browser](https://www.torproject.org/download/) aberto, o plugin detecta sozinho em `127.0.0.1:9150`; o daemon `tor` fica em `9050`.
+O Tor é só uma opção para quem quer mais estabilidade: ele é mais rápido e não morre no meio do caminho como as proxies públicas. Se você já tiver o [Tor Browser](https://www.torproject.org/download/) aberto, o plugin detecta sozinho em `127.0.0.1:9150`; o daemon `tor` fica em `9050`. Ele também procura em `9052` e `9250` — a `9052` é a que o instalador configura com bridge meek, que atravessa rede censurada.
 
 ## Instalação: passo a passo completo
 
@@ -302,11 +302,11 @@ Depois copie a pasta **`streamFix`** (a que contém `index.tsx` e `native.ts`) p
 Equicord/src/userplugins/streamFix
 ```
 
-**Atenção aos detalhes que mais quebram:**
-
-- A pasta `userplugins` **não existe por padrão** — crie ela dentro de `src/`
-- Ela fica em `src/userplugins`, **ao lado** de `src/plugins` — **nunca dentro** de `src/plugins` (isso gera o erro `Could not resolve "./plugins/userplugins"` no build)
-- No final, o caminho dos arquivos deve ser exatamente `src/userplugins/streamFix/index.tsx` e `src/userplugins/streamFix/native.ts`
+> [!WARNING]
+> Detalhes que mais quebram:
+> - A pasta `userplugins` **não existe por padrão** — crie ela dentro de `src/`
+> - Ela fica em `src/userplugins`, **ao lado** de `src/plugins` — **nunca dentro** de `src/plugins` (isso gera o erro `Could not resolve "./plugins/userplugins"` no build)
+> - No final, o caminho dos arquivos deve ser exatamente `src/userplugins/streamFix/index.tsx` e `src/userplugins/streamFix/native.ts`
 
 ### Passo 4 — Compile
 
@@ -314,7 +314,7 @@ Equicord/src/userplugins/streamFix
 pnpm build
 ```
 
-Isso gera a pasta `dist/` com o Equicord modificado já incluindo o plugin. Se aparecer algum erro vermelho, leia a seção **Solução de problemas** antes de tentar de novo.
+Isso gera a pasta `dist/` com o Equicord modificado já incluindo o plugin. Se aparecer algum erro vermelho, leia a seção [Solução de problemas](#solução-de-problemas) antes de tentar de novo.
 
 ### Passo 5 — Injete no Discord
 
@@ -330,7 +330,7 @@ O instalador abre uma janelinha perguntando **qual Discord** você usa (Stable, 
 
 1. Abra o Discord
 2. Vá em **Configurações → Equicord (ou Vencord) → Plugins** e ative **StreamFix**
-3. Deixe **Voice region** em `Automatic`, que é o padrão (leia o aviso abaixo antes de mudar)
+3. Deixe **Voice region** em `Automatic`, que é o padrão (leia o aviso na seção [Configuração](#configuração) antes de mudar)
 4. Reinicie o Discord por completo (bandeja, Quit). O roteador sobe junto com o app, e a saída é escolhida enquanto o Discord carrega
 5. Entre num canal de voz: **Go Live e câmera liberados**. Quem escolhe o servidor de voz é o Discord, e pode não ser o brasileiro. Não force `brazil` em **Voice region** sem ler o aviso na seção Configuração
 
@@ -340,9 +340,11 @@ Nas settings do plugin:
 
 - **Voice region**: seletor com a lista real de regiões que o Discord expõe. Padrão: `Automatic`, que devolve a decisão ao Discord.
 
-  > **Cuidado ao forçar `brazil` aqui.** Há indício de que o servidor de mídia brasileiro é justamente onde a transmissão é recusada: numa sessão em que a call caiu no Brasil o Go Live não subiu, e numa sessão em que caiu em Santiago funcionou. São duas observações, não uma prova, mas o padrão seguro é não forçar. Use este campo se quiser priorizar latência e estiver disposto a perder o Go Live.
+  > [!CAUTION]
+  > Cuidado ao forçar `brazil` aqui. Há indício de que o servidor de mídia brasileiro é justamente onde a transmissão é recusada: numa sessão em que a call caiu no Brasil o Go Live não subiu, e numa sessão em que caiu em Santiago funcionou. São duas observações, não uma prova, mas o padrão seguro é não forçar. Use este campo se quiser priorizar latência e estiver disposto a perder o Go Live.
 
   Vale saber que isto é uma **preferência**, não uma ordem: o Discord pode ignorar e escolher outra região, e foi o que aconteceu no teste.
+- **Stream region**: a região por onde a **transmissão** sai, separada da região da call. Padrão: `Same region as your call`, que deixa a transmissão seguir a call. Use se a call estiver boa numa região mas a transmissão não subir por ela.
 - **Session routing**: o que passa pela saída. Padrão `Gateway only` — o mais rápido, e o único necessário para liberar o Go Live. Em `Gateway and login`, o `discord.com` também passa pela saída enquanto você autentica, o que esconde seu endereço real nesse momento e deixa a abertura do app mais lenta. Assim que a sessão abre, o escopo encolhe sozinho de volta para o gateway.
 - **Proxy**: a saída do gateway — no formato `esquema://host:porta` (`socks5`, `http` ou `https`).
   - Um servidor seu é a melhor opção: `ssh -D 1080 usuario@seu-servidor` e depois `socks5://127.0.0.1:1080` aqui.
@@ -361,7 +363,7 @@ Reconexão do gateway no meio da sessão não custa mais o desbloqueio — o soc
 
 ## Solução de problemas
 
-- **Discord carregando infinitamente**: não deveria mais acontecer por causa do plugin, já que ele não roteia nada além de `gateway.discord.gg` e cai para direto sozinho. Se acontecer mesmo assim, com o Discord fechado abra `%APPDATA%/Equicord/settings/settings.json` (ou `.../Vencord/...`) e coloque `"StreamFix": { "enabled": false }`. Em `native-settings.json` a chave deste plugin é `pool` (as saídas guardadas), e apagá-la devolve tudo ao estado inicial. Se você vem de uma versão anterior, apague também `verifiedProxy`, `bootPending` e `lastKnownProxy`, que não são mais lidas.
+- **Discord carregando infinitamente**: não deveria acontecer por causa do plugin, já que ele só roteia os hosts de gateway e cai para direto sozinho. Se acontecer mesmo assim, com o Discord fechado abra `%APPDATA%/Equicord/settings/settings.json` (ou `.../Vencord/...`) e coloque `"StreamFix": { "enabled": false }`. Em `native-settings.json` a chave deste plugin é `pool` (as saídas guardadas), e apagá-la devolve tudo ao estado inicial.
 - **"StreamFix is reloading behind the exit"**: a saída ficou pronta depois de o gateway já ter conectado, então a sessão nasceu desprotegida e o servidor manteve o bloqueio. O plugin procura uma saída que responda e recarrega o cliente sozinho para a sessão renascer atrás dela. São no máximo duas tentativas: sem esse teto, um bloqueio que a saída não resolve viraria recarregamento sem fim.
 - **"StreamFix could not unlock this session"**: as tentativas acabaram e a sessão continua bloqueada. Aponte o campo **Proxy** para um servidor seu e reinicie o Discord pela bandeja. Rotear só o gateway pode não ter bastado no seu caso: **Session routing** em `Gateway and login` manda o `discord.com` junto durante a autenticação.
 - **Nenhuma saída passou nos testes**: nenhuma candidata fechou TLS com certificado válido naquele momento. Tente de novo, ou use Tor ou uma proxy sua no campo Proxy.
@@ -384,30 +386,22 @@ streamFix/
 
 installer/
 ├── StreamFix-Installer.bat        # Windows: dois cliques, libera a execução e chama o .ps1
-├── StreamFix-Installer.ps1        # Windows: instalador automático
+├── StreamFix-Installer.ps1        # Windows: instalador automático (terminal)
+├── StreamFix-Installer-GUI.ps1    # Windows: instalador automático (janela)
 └── streamfix-installer.sh         # Linux: mesmo instalador, mesmo menu
 
 assets/
 └── instalacao.gif                 # o vídeo do começo deste README
 ```
 
-## Licença
+Veja [CONTRIBUTING.md](CONTRIBUTING.md) para rodar o projeto localmente e propor mudanças, e [LICENSE](LICENSE) para os termos (GPL-3.0-or-later).
 
-GPL-3.0-or-later, mesma licença do Vencord/Equicord. Veja [LICENSE](LICENSE).
+---
 
-## Origem
+StreamFix é um fork de [bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass). <!-- instalador automático originalmente por Vithor (https://github.com/Vith0r) -->
 
-**StreamFix nasceu como fork de [bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass)**, criado originalmente por **bezumiya** ([@obezumiya](https://twitter.com/obezumiya) no Twitter, `1366453661970071633` no Discord).
-
-## Agradecimentos
-
-**Obrigado ao [Vithor](https://github.com/Vith0r)** pelo instalador.
-
-Ele escreveu o primeiro instalador do GoLiveBypass por conta própria, e foi ele quem mostrou
-que dava para automatizar tudo isso num script só. O instalador que está aqui hoje nasceu
-desse trabalho.
-
-# English
+<details>
+<summary><strong>🇬🇧 English summary</strong> (click to expand)</summary>
 
 **StreamFix** is an **Equicord/Vencord** plugin, made by a Brazilian developer, that **restores Go Live and camera for Brazilian Discord users**. Discord's region gate is evaluated once at voice-channel join, from the gateway WebSocket origin IP, and never re-evaluated mid-call, so that single socket is the only thing that needs to leave Brazil.
 
@@ -426,6 +420,7 @@ It was written after Brazil's data protection authority (ANPD) [ordered Discord 
 - Free proxies are weak for anonymity, and whoever runs the exit sees your gateway traffic. Your own machine abroad (`ssh -D 1080`, then `socks5://127.0.0.1:1080`) is the option with nobody else in the middle. Tor is the next best.
 - It cannot leave you unable to open Discord: the local router falls back to a direct connection if the exit fails or takes too long, the PAC keeps the system rule as its last resort, and nothing outside `gateway.discord.gg` is touched at all.
 - Install: copy the `streamFix` folder into `src/userplugins/` of your Equicord or Vencord clone, then `pnpm install && pnpm build && pnpm inject`, fully restart Discord, and enable **StreamFix** in plugin settings.
-- StreamFix started as a fork of **[bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass)**, created by bezumiya ([Twitter](https://twitter.com/obezumiya), Discord `1366453661970071633`).
-- Thanks to **[Vithor](https://github.com/Vith0r)** for the installer: he wrote the first GoLiveBypass installer on his own and showed that the whole setup could be automated in a single script.
+- StreamFix started as a fork of **[bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass)**, created by bezumiya ([Twitter](https://twitter.com/obezumiya), Discord `1366453661970071633`). Installer originally by [Vithor](https://github.com/Vith0r).
 - License: GPL-3.0-or-later.
+
+</details>
