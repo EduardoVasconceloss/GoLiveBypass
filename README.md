@@ -17,7 +17,7 @@ Um script faz tudo: acha o seu Equicord ou Vencord, instala o plugin, compila e 
 
 ## Índice
 
-- [Instalação automática](#instalação-automática-recomendado): um script faz tudo sozinho, no Windows e no Linux
+- [Instalação automática](#instalação-automática-recomendado): um script faz tudo sozinho, no Windows, no Linux e no macOS (beta)
 - [Instalação manual, passo a passo](#instalação-passo-a-passo-completo): se preferir fazer cada etapa à mão
 - [Dependências](#dependências-o-que-baixar-e-como-instalar): só para o caminho manual
 - [Configuração](#configuração): região da call, região da transmissão, proxy
@@ -145,12 +145,16 @@ Cada release carrega estes arquivos, e um `SHA256SUMS.txt` cobrindo todos:
 | uma janela em vez de terminal | `StreamFix-Installer-GUI.exe` |
 | o Windows bloqueou o `.exe` | `StreamFix-Installer-GUI.ps1` (janela) ou `StreamFix-Installer.bat` |
 | instalar no Linux | `streamfix-installer.sh` |
+| instalar no macOS (beta) | `streamfix-installer.sh`, o mesmo arquivo do Linux |
 | ler o código antes de rodar | os `.ps1` e o `.sh`, que são o mesmo código sem compilar |
+
+> [!IMPORTANT]
+> **Suporte a macOS em beta.** O caminho do macOS foi verificado lendo o código-fonte do instalador oficial do Equicord/Vencord (o Equilotl) e com testes automatizados que simulam macOS; ele nunca rodou numa Mac de verdade. Se você testar num Mac, [abra uma issue](https://github.com/EduardoVasconceloss/StreamFix/issues/new) contando o que aconteceu, funcionando ou não: é desse relato que vai vir a confirmação que falta. A marca de beta sai quando chegar o primeiro relato confirmando que o instalador completou a instalação num Mac real.
 
 > [!NOTE]
 > O Windows pode bloquear esse `.exe`. O SmartScreen avisa "fornecedor desconhecido", e o Controle Inteligente de Aplicativos (padrão em instalações novas do Windows 11) recusa de vez, sem opção de executar mesmo assim. O motivo é que o executável ainda não é assinado digitalmente. Enquanto a assinatura não sai, use o `.bat` ou os `.ps1`: é o mesmo código, interpretado em vez de compilado, e não passa pela verificação que barra binários.
 
-**Linux:**
+**Linux e macOS:**
 
 ```bash
 curl -fsSLO https://github.com/EduardoVasconceloss/StreamFix/releases/latest/download/streamfix-installer.sh
@@ -158,7 +162,11 @@ chmod +x streamfix-installer.sh
 ./streamfix-installer.sh
 ```
 
-Funciona com o Discord instalado por flatpak (do sistema ou do usuário) e com os pacotes nativos. Ele acha o Discord procurando o `app.asar` de verdade, o que cobre tanto os pacotes que embutem o app quanto o formato atual, em que o pacote traz só um bootstrap e o app é baixado na primeira execução para dentro do seu `~/.config`.
+É o mesmo script para os dois sistemas, sem asset separado: ele detecta em qual dos dois está rodando e ajusta a descoberta sozinho.
+
+No Linux, funciona com o Discord instalado por flatpak (do sistema ou do usuário) e com os pacotes nativos. Ele acha o Discord procurando o `app.asar` de verdade, o que cobre tanto os pacotes que embutem o app quanto o formato atual, em que o pacote traz só um bootstrap e o app é baixado na primeira execução para dentro do seu `~/.config`.
+
+No macOS, ele procura o Discord (Stable, PTB, Canary ou Development) em `/Applications` e em `~/Applications`. A injeção usa o instalador de linha de comando do Equicord quando ele existe; nos outros casos, abre a janela do instalador do mod e diz o que clicar.
 
 > [!NOTE]
 > No flatpak, um `flatpak update` do Discord refaz a instalação dele e leva a injeção junto, então o Go Live para de funcionar até você rodar o instalador de novo. Não tem como evitar pelo nosso lado: quem injeta é o instalador do Equicord/Vencord, e o update substitui o que ele mexeu.
@@ -199,7 +207,7 @@ Ele descobre onde está o seu checkout lendo a própria injeção do Discord: o 
 | Equicord ou Vencord já instalado a partir do fonte | Copia o plugin, compila e reinicia o Discord |
 | Instalado, mas o Discord não carrega desse checkout | Compila e roda o `pnpm inject` para apontar o Discord para ele |
 | Você não tem nenhum dos dois | Mostra uma tela para escolher **Equicord** ou **Vencord**, baixa, compila e injeta |
-| Falta Git ou Node | No Windows, oferece instalar pelo winget. No Linux, mostra o comando da sua distro (o pacote do Node é `nodejs`, e costuma ser antigo demais: nesse caso use nvm, fnm ou o NodeSource). O pnpm sai do `corepack enable` nos dois |
+| Falta Git ou Node | No Windows, oferece instalar pelo winget. No Linux, mostra o comando da sua distro (o pacote do Node é `nodejs`, e costuma ser antigo demais: nesse caso use nvm, fnm ou o NodeSource). No macOS, oferece instalar os dois pelo Homebrew; sem Homebrew, mostra o comando oficial de instalação dele e para. O pnpm sai do `corepack enable` nos três |
 
 A descoberta é automática e roda em milissegundos: primeiro lê a injeção do Discord, depois varre os lugares onde um checkout costuma estar (perfil, Documentos, Desktop, Downloads, `dev`, `repos`, `projects`, `source`, e a raiz de cada disco).
 
@@ -254,7 +262,7 @@ O Equicord/Vencord é feito em TypeScript, e quem transforma isso no programa fi
 **Windows/macOS:**
 1. Entre em [nodejs.org](https://nodejs.org/) e baixe o botão verde **LTS** (qualquer LTS a partir do 22)
 2. Instale clicando em **Next** em tudo, deixando marcada a opção de adicionar ao PATH (ela já vem marcada)
-3. Ou pelo terminal: `winget install OpenJS.NodeJS.LTS`
+3. Ou pelo terminal: `winget install OpenJS.NodeJS.LTS` (Windows) ou `brew install node` (macOS)
 
 **Linux:** use o [NodeSource](https://github.com/nodesource/distributions), porque o Node dos repositórios da distro costuma ser velho demais.
 
