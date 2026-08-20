@@ -42,6 +42,22 @@ jobs:
         shell: pwsh
         run: Install-Module -Name ps2exe -Force -Scope CurrentUser
 
+      # A versao gravada nos .exe sai da tag que disparou o build, senao o executavel
+      # continuaria anunciando 1.0.0.0 pra sempre. ps2exe exige quatro campos numericos,
+      # entao "v1.2.3" vira "1.2.3.0"; sem tag (workflow_dispatch solto) fica 0.0.0.0.
+      - name: Resolve version from tag
+        shell: pwsh
+        run: |
+          $tag = "${{ inputs.tag }}"
+          if (-not $tag) { $tag = "${{ github.ref }}" -replace '^refs/tags/', '' }
+          if ($tag -match '^v?(\d+)\.(\d+)\.(\d+)') {
+            $version = "$($Matches[1]).$($Matches[2]).$($Matches[3]).0"
+          } else {
+            $version = "0.0.0.0"
+          }
+          Write-Host "Versao dos .exe: $version (tag: $tag)"
+          "EXE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
       - name: Compile StreamFix-Installer.exe (terminal)
         shell: pwsh
         run: |
@@ -51,7 +67,7 @@ jobs:
             -title "StreamFix Installer" `
             -description "Instala o StreamFix no Equicord ou Vencord (terminal)" `
             -product "StreamFix" `
-            -version "1.0.0.0"
+            -version "$env:EXE_VERSION"
 
       - name: Compile StreamFix-Installer-GUI.exe
         shell: pwsh
@@ -63,7 +79,7 @@ jobs:
             -title "StreamFix Installer (GUI)" `
             -description "Instala o StreamFix no Equicord ou Vencord, com janela" `
             -product "StreamFix" `
-            -version "1.0.0.0"
+            -version "$env:EXE_VERSION"
 
       # TODO (apos aprovacao no SignPath Foundation ou programa equivalente): assinar os dois
       # .exe aqui, antes de calcular o hash e subir como artifact/release asset.
