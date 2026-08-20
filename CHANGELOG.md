@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.1](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.0.0...v1.0.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* destravar o versionamento das releases e dos .exe ([cea56f9](https://github.com/EduardoVasconceloss/StreamFix/commit/cea56f97abbabebf828c7009a16cc3d7c3fdf70e))
+* verificar o git tambem quando o checkout ja existe ([b6fec20](https://github.com/EduardoVasconceloss/StreamFix/commit/b6fec200b3e7e0ad5fdfb736e14fba7293004803))
+
 ## 1.0.0 (2026-08-19)
 
 
