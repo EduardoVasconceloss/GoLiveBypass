@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.1.1...v1.2.0) (2026-08-20)
+
+
+### Miscellaneous Chores
+
+* forçar release 1.2.0 com o suporte a macOS ([884debf](https://github.com/EduardoVasconceloss/StreamFix/commit/884debfe74f7bb6a7660b72d173b0cb1c8356bb1))
+
 ## [1.1.1](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.1.0...v1.1.1) (2026-08-20)
 
 
