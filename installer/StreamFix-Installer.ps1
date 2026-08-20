@@ -372,14 +372,19 @@ function Show-ModChoice {
     }
 }
 
-function Install-Toolchain($needGit, $root = $null) {
+function Install-Toolchain($root = $null) {
     # Relê o PATH antes do primeiro Test-Tool: quem instala o Node e abre o instalador sem
     # reiniciar o terminal (ou clica no .exe pelo Explorer) herda um PATH de antes do registro
     # atualizar, e a ferramenta parece "faltando" mesmo estando la.
     Update-PathFromEnvironment
 
+    # git e sempre necessario, mesmo quando ja existe um checkout: o build roda "git
+    # rev-parse" pra gravar o hash na versao compilada (ver Test-ModCheckout). $needGit so
+    # controlava a mensagem/fluxo de clone, e por isso um checkout ja existente sem git
+    # instalado passava direto por essa checagem e so quebrava mais tarde, com "pnpm build
+    # falhou" sem contexto nenhum.
     $missing = @()
-    if ($needGit -and -not (Test-Tool 'git')) { $missing += 'git' }
+    if (-not (Test-Tool 'git')) { $missing += 'git' }
     if (-not (Test-Tool 'node')) { $missing += 'node' }
 
     if ($missing.Count -gt 0) {
@@ -457,7 +462,7 @@ function Install-Mod($choice) {
     Write-Host ''
     if (-not (Confirm-Action 'Pode seguir?')) { throw 'Cancelado.' }
 
-    Install-Toolchain $true
+    Install-Toolchain
 
     if (Test-Path -LiteralPath $target) {
         if (-not (Test-ModCheckout $target)) {
@@ -565,7 +570,7 @@ function Invoke-Install($root) {
     $proxy = Select-Proxy
     $permanent = Select-Persistence
 
-    Install-Toolchain $false $root
+    Install-Toolchain $root
     Copy-Plugin $root
     Build-Mod $root
 

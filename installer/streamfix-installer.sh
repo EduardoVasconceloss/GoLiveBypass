@@ -246,9 +246,12 @@ choose_mod() {
 }
 
 ensure_toolchain() {
-    local need_git="$1" missing=()
+    local missing=()
 
-    [ "$need_git" -eq 1 ] && ! have git && missing+=("git")
+    # git e sempre necessario, mesmo quando ja existe um checkout: o build roda "git
+    # rev-parse" pra gravar o hash na versao compilada, entao um checkout ja existente sem
+    # git instalado quebrava mais tarde no "pnpm build", sem contexto nenhum.
+    have git || missing+=("git")
     have node || missing+=("node")
 
     if [ ${#missing[@]} -gt 0 ]; then
@@ -294,7 +297,7 @@ install_mod() {
     printf '  %s  4. Injetar no Discord (o Discord vai fechar)%s\n\n' "$C_DIM" "$C_OFF" >&2
     confirm "Pode seguir?" || fail "Cancelado."
 
-    ensure_toolchain 1
+    ensure_toolchain
 
     if [ -d "$target" ]; then
         is_checkout "$target" || fail "$target ja existe e nao parece um checkout. Apague a pasta ou use --source."
@@ -597,7 +600,7 @@ do_install() {
     proxy="$(select_proxy)"
     select_persistence || permanent=1
 
-    ensure_toolchain 0
+    ensure_toolchain
     copy_plugin "$root"
     build_mod "$root"
 
