@@ -129,7 +129,7 @@ Um script encontra sozinho o Equicord ou o Vencord que você tem, instala o plug
 
 **Windows, jeito mais simples:** baixe o [`StreamFix-Installer.bat`](installer/StreamFix-Installer.bat) e dê dois cliques. Ele libera a execução só para aquele processo (`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`), baixa o `.ps1` se ele não estiver do lado, e roda tudo.
 
-**Windows, com janela:** a página de [**releases**](https://github.com/EduardoVasconceloss/StreamFix/releases/latest) traz `StreamFix-Installer-GUI.exe` (com janela) e `StreamFix-Installer.exe` (terminal), compilados pelo GitHub Actions a partir do código deste repositório, com um `SHA256SUMS.txt` para conferir.
+**Windows, com janela:** a página de [**releases**](https://github.com/EduardoVasconceloss/StreamFix/releases/latest) traz `StreamFix-Installer-GUI.exe` (com janela) e `StreamFix-Installer.exe` (terminal), compilados pelo GitHub Actions a partir do código deste repositório. Cada release traz também os scripts em si — `StreamFix-Installer.ps1`, `StreamFix-Installer-GUI.ps1`, `StreamFix-Installer.bat` e `streamfix-installer.sh` — e um `SHA256SUMS.txt` cobrindo todos eles.
 
 > [!NOTE]
 > O Windows pode bloquear esses `.exe` — SmartScreen avisando "fornecedor desconhecido", ou o **Controle Inteligente de Aplicativos** (padrão em instalações novas do Windows 11) recusando de vez, sem opção de executar mesmo assim. O motivo é o mesmo nos dois casos: o executável ainda não é assinado digitalmente. Enquanto a assinatura não sai, use o `.bat` acima ou o `.ps1` abaixo — é o mesmo código, interpretado em vez de compilado, e não passa por esse bloqueio.
@@ -137,7 +137,7 @@ Um script encontra sozinho o Equicord ou o Vencord que você tem, instala o plug
 **Linux:**
 
 ```bash
-curl -fsSLO https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/main/installer/streamfix-installer.sh
+curl -fsSLO https://github.com/EduardoVasconceloss/StreamFix/releases/latest/download/streamfix-installer.sh
 chmod +x streamfix-installer.sh
 ./streamfix-installer.sh
 ```
@@ -169,9 +169,12 @@ Escolhendo instalar, ele pergunta três coisas: **onde** (usar o mod que já est
 **Pelo PowerShell:**
 
 ```powershell
-irm https://raw.githubusercontent.com/EduardoVasconceloss/StreamFix/main/installer/StreamFix-Installer.ps1 -OutFile StreamFix-Installer.ps1
+irm https://github.com/EduardoVasconceloss/StreamFix/releases/latest/download/StreamFix-Installer.ps1 -OutFile StreamFix-Installer.ps1
 powershell -ExecutionPolicy Bypass -File .\StreamFix-Installer.ps1
 ```
+
+> [!NOTE]
+> Os comandos acima baixam da **última release**, não do `main`. É de propósito: o `main` recebe pushes que ainda não passaram por uma release, e esses scripts rodam na sua máquina. Todos os arquivos da release estão no `SHA256SUMS.txt` que vai junto, se você quiser conferir antes de executar.
 
 Ele descobre onde está o seu checkout **lendo a própria injeção do Discord**: o instalador do Equicord e o do Vencord substituem o `app.asar` por um stub que faz `require` da pasta de build, e desse caminho dá para derivar a raiz do repositório. Se não achar por aí, procura nos lugares habituais.
 

@@ -84,10 +84,22 @@ jobs:
       # TODO (apos aprovacao no SignPath Foundation ou programa equivalente): assinar os dois
       # .exe aqui, antes de calcular o hash e subir como artifact/release asset.
 
-      - name: Hash the built exes
+      # Os scripts vao junto dos .exe, e nao so os binarios compilados. Sao eles o ponto de
+      # entrada de quem instala no Linux (.sh) e de quem, no Windows, prefere nao rodar um .exe
+      # sem assinatura -- e uma release que so traz .exe obriga essa gente a buscar o script no
+      # main, que e justamente o que os scripts evitam fazer entre si ao resolver a ultima
+      # release para tudo que baixam depois.
+      - name: Hash the release files
         shell: pwsh
         run: |
-          $files = "installer/StreamFix-Installer.exe", "installer/StreamFix-Installer-GUI.exe"
+          $files = @(
+            "installer/StreamFix-Installer.exe"
+            "installer/StreamFix-Installer-GUI.exe"
+            "installer/StreamFix-Installer.ps1"
+            "installer/StreamFix-Installer-GUI.ps1"
+            "installer/StreamFix-Installer.bat"
+            "installer/streamfix-installer.sh"
+          )
           $files | ForEach-Object {
             "$((Get-FileHash $_ -Algorithm SHA256).Hash)  $(Split-Path -Leaf $_)"
           } | Set-Content "installer/SHA256SUMS.txt"
@@ -96,10 +108,14 @@ jobs:
       - name: Upload build artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: streamfix-installer-exe
+          name: streamfix-installer
           path: |
             installer/StreamFix-Installer.exe
             installer/StreamFix-Installer-GUI.exe
+            installer/StreamFix-Installer.ps1
+            installer/StreamFix-Installer-GUI.ps1
+            installer/StreamFix-Installer.bat
+            installer/streamfix-installer.sh
             installer/SHA256SUMS.txt
 
       - name: Attach to release
@@ -115,5 +131,9 @@ jobs:
           gh release upload "$tag" \
             installer/StreamFix-Installer.exe \
             installer/StreamFix-Installer-GUI.exe \
+            installer/StreamFix-Installer.ps1 \
+            installer/StreamFix-Installer-GUI.ps1 \
+            installer/StreamFix-Installer.bat \
+            installer/streamfix-installer.sh \
             installer/SHA256SUMS.txt \
             --clobber
