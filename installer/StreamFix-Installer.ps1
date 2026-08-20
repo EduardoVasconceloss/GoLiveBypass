@@ -136,6 +136,12 @@ function Get-RepoFile($relativePath) {
 # stderr de um comando externo vira NativeCommandError fatal com ErrorActionPreference=Stop,
 # mesmo sendo so aviso (ex: pnpm avisando a propria versao). Quem diz se falhou de verdade e o
 # $LASTEXITCODE, checado depois de cada chamada -- aqui so relaxamos a checagem do PowerShell.
+#
+# A saida vai por Write-Host, NUNCA pro stream de sucesso. Emitir no stream de sucesso fazia a
+# saida do comando virar parte do valor de retorno de quem chamou: Install-Mod devolvia
+# ["Cloning into 'C:\...'", "C:\...\Equicord"] em vez do caminho, e o primeiro Join-Path
+# reclamava que nao existe drive chamado "Cloning into 'C". Mesma armadilha que ja tinha
+# derrubado o log da GUI -- ver o Write-Host redefinido em StreamFix-Installer-GUI.ps1.
 function Invoke-Native([ScriptBlock] $Command) {
     $previous = $ErrorActionPreference
     $ErrorActionPreference = 'Continue'
@@ -143,7 +149,8 @@ function Invoke-Native([ScriptBlock] $Command) {
         # 2>&1 mistura stderr no stream; o ForEach devolve o texto puro em vez do ErrorRecord,
         # senao toda linha aparece em vermelho como "ERROR:" mesmo sendo saida normal.
         & $Command 2>&1 | ForEach-Object {
-            if ($_ -is [Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ }
+            $line = if ($_ -is [Management.Automation.ErrorRecord]) { $_.Exception.Message } else { $_ }
+            Write-Host "    $line" -ForegroundColor DarkGray
         }
     } finally {
         $ErrorActionPreference = $previous
@@ -564,6 +571,13 @@ function Invoke-Install($root) {
     # frente como um erro criptico do .NET tipo "nao e possivel associar o argumento ao
     # parametro 'Path' porque ele e uma cadeia de caracteres vazia" -- sem dizer o que faltou.
     if (-not $root) { throw 'Nao consegui determinar a pasta de instalacao. Tente de novo, ou aponte com -Source.' }
+
+    # Array aqui significa que alguma funcao no caminho vazou saida pro stream de sucesso e ela
+    # entrou no valor de retorno (ver Invoke-Native). Falhar aqui, dizendo o que veio junto, e
+    # muito melhor que deixar o Join-Path la na frente reclamar de um drive inexistente.
+    if ($root -isnot [string]) {
+        throw "A pasta de instalacao veio poluida com a saida de outro comando: $($root -join ' | ')"
+    }
 
     Remove-LegacyTor
 
