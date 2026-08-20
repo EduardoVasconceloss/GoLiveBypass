@@ -110,7 +110,10 @@ jobs:
         run: |
           tag="${{ inputs.tag }}"
           if [ -z "$tag" ]; then tag="${GITHUB_REF#refs/tags/}"; fi
+          # SHA256SUMS.txt vai junto: enquanto os .exe nao sao assinados, conferir o hash e a
+          # unica forma de quem baixa verificar que o binario e o que este build produziu.
           gh release upload "$tag" \
             installer/StreamFix-Installer.exe \
             installer/StreamFix-Installer-GUI.exe \
+            installer/SHA256SUMS.txt \
             --clobber
