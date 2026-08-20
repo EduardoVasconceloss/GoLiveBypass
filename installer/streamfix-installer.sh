@@ -43,6 +43,22 @@ FS_PREFIX="${FS_PREFIX:-}"
 # qualquer runner, sem depender de em qual sistema operacional o CI de fato roda.
 OS_NAME="${OS_NAME:-$(uname -s)}"
 
+# Mesma ideia para a arquitetura: em producao vem do uname -m de verdade, ja mapeado pro
+# sufixo de asset do Equilotl (arm64 ou x64; uname -m devolve x86_64 no Intel, nao x64), e os
+# testes exportam o sufixo direto, sem depender da CPU de quem roda o teste. Uma CPU nao
+# mapeada (nem arm64 nem x86_64) deixa MACOS_ARCH vazio, e macos_cli_arch() falha nela.
+case "$(uname -m 2>/dev/null)" in
+    arm64)   MACOS_ARCH="${MACOS_ARCH:-arm64}" ;;
+    x86_64)  MACOS_ARCH="${MACOS_ARCH:-x64}" ;;
+    *)       MACOS_ARCH="${MACOS_ARCH:-}" ;;
+esac
+
+# URL de release do instalador do Equicord/Vencord (Equilotl), a mesma que o wrapper de
+# injecao (Equicord/scripts/runInstaller.mjs, BASE_URL) ja usa hoje para baixar o build GUI no
+# macOS. So o nome do asset muda: aqui pegamos o EquilotlCli-darwin-<arch>, que le linha de
+# comando, em vez do Equilotl-darwin-<arch>.zip, que so abre janela.
+MACOS_EQUILOTL_BASE_URL="https://github.com/Equicord/Equilotl/releases/latest/download"
+
 MODE="menu"
 MOD=""
 SOURCE=""
@@ -651,6 +667,124 @@ run_inject_root() {
     return "$rc"
 }
 
+# arm64 e x64 sao os dois sufixos de asset que o Equilotl publica (EquilotlCli-darwin-arm64 e
+# EquilotlCli-darwin-x64, ver scripts/runInstaller.mjs do Equicord). O mapeamento de verdade
+# ja aconteceu ao definir MACOS_ARCH; aqui so falha numa CPU que nao mapeamos.
+macos_cli_arch() {
+    [ -n "$MACOS_ARCH" ] || return 1
+    printf '%s\n' "$MACOS_ARCH"
+}
+
+# Pasta de caches do usuario, nao a de suporte a aplicativos: o binario baixado nao e estado do
+# StreamFix, e a pasta de caches e o lugar que o proprio macOS sabe que pode limpar.
+macos_equilotl_cli_cache_path() {
+    printf '%s\n' "$HOME/Library/Caches/StreamFix/EquilotlCli-darwin-$1"
+}
+
+# Baixa o build de linha de comando do Equilotl pela arquitetura da maquina e guarda em cache,
+# reaproveitando se ja presente. Mesma URL de ultima release que o wrapper de injecao ja usa
+# hoje, do mesmo publicador; sem checksum, porque o Equilotl nao emite um para nenhum binario
+# dele.
+ensure_equilotl_cli() {
+    local arch cache
+    arch="$(macos_cli_arch)" || return 1
+    cache="$(macos_equilotl_cli_cache_path "$arch")"
+
+    if [ -x "$cache" ]; then
+        printf '%s\n' "$cache"
+        return 0
+    fi
+
+    mkdir -p "$(dirname "$cache")" || return 1
+    local url="$MACOS_EQUILOTL_BASE_URL/EquilotlCli-darwin-$arch"
+    local tmp="$cache.tmp.$$"
+
+    if have curl; then
+        curl -fsSL -o "$tmp" "$url" || { rm -f "$tmp"; return 1; }
+    elif have wget; then
+        wget -qO "$tmp" "$url" || { rm -f "$tmp"; return 1; }
+    else
+        return 1
+    fi
+
+    chmod +x "$tmp" || { rm -f "$tmp"; return 1; }
+    mv "$tmp" "$cache" || { rm -f "$tmp"; return 1; }
+    printf '%s\n' "$cache"
+}
+
+# Ponto de exec isolado do resto de macos_run_inject_cli para os testes poderem substituir por
+# um espiao e conferir as variaveis de ambiente sem baixar nem rodar o binario de verdade. As
+# tres variaveis chegam pelo ambiente herdado da chamada em macos_run_inject_cli (prefixo
+# VAR=valor), nao redeclaradas aqui, para que um espiao que substitua esta funcao inteira ainda
+# as veja.
+macos_exec_equilotl_cli() {
+    local cli="$1" loc="$2"
+    "$cli" --install --location "$loc"
+}
+
+# As tres variaveis reproduzem o contrato que o wrapper de injecao (Equicord/scripts/
+# runInstaller.mjs) usa para chamar o Equilotl: sem elas ele instalaria a release publicada do
+# Equicord em vez do build deste checkout, e o plugin nao estaria la.
+macos_run_inject_cli() {
+    local root="$1" loc="${2:-}" cli
+    [ -n "$loc" ] || return 1
+    cli="$(ensure_equilotl_cli)" || return 1
+    EQUICORD_USER_DATA_DIR="$root" \
+    EQUICORD_DIRECTORY="$root/dist/desktop" \
+    EQUICORD_DEV_INSTALL=1 \
+    macos_exec_equilotl_cli "$cli" "$loc"
+}
+
+# So o Equicord tem build de linha de comando para macOS; o Vencord so publica o zip GUI
+# (VencordInstaller.MacOS.zip, sem CLI), entao para ele nem vale tentar (ADR 0001).
+macos_has_cli_installer() {
+    [ "$(checkout_mod "$1")" = "Equicord" ]
+}
+
+# O paralelo mais proximo da divisao usuario/sistema do Linux: instalar em /Applications
+# normalmente e gravavel pelo usuario admin sem sudo, mas quando falha, elevar nao ajuda -- por
+# isso a mensagem, e nao um pedido de privilegio.
+macos_is_system_target() {
+    case "$1" in
+        "$FS_PREFIX/Applications"/*) return 0 ;;
+        *) return 1 ;;
+    esac
+}
+
+# De fora as duas causas parecem iguais (a escrita simplesmente falha) e tem solucoes
+# diferentes: uma conta sem privilegio de administrador se resolve trocando de conta, e a
+# permissao de Gerenciamento de Apps do macOS 15+ nao se resolve com sudo nenhum.
+macos_permission_failure_message() {
+    printf 'Nao consegui escrever em %s. Duas causas possiveis, que de fora parecem iguais: sua conta sem privilegio de administrador, ou a permissao de Gerenciamento de Apps do macOS 15+ (Ajustes do Sistema > Privacidade e Seguranca > Gerenciamento de Apps), que sudo nao resolve.\n' "$1"
+}
+
+# No macOS a injecao nunca pede confirmacao pra elevar: o "sudo pendurado" do fluxo Linux nao
+# faz sentido aqui, porque /Applications normalmente ja e gravavel sem sudo, e quando nao e,
+# sudo tambem nao resolve a permissao de Gerenciamento de Apps do macOS 15+. Primeiro tenta o
+# build de linha de comando do Equilotl, sem nenhuma janela; se ele nao existir para o mod, ou
+# se o download falhar, degrada para o caminho com janela (run_inject) em vez de abortar.
+macos_run_inject() {
+    local root="$1" loc="${2:-}"
+
+    if [ -n "$loc" ] && macos_has_cli_installer "$root"; then
+        step "Injetando no Discord pelo build de linha de comando do Equilotl (sem janela)"
+        if macos_run_inject_cli "$root" "$loc" && injected_from_checkout "$root"; then
+            return 0
+        fi
+        warn "O build de linha de comando nao funcionou. Caindo para a janela do instalador do mod."
+    fi
+
+    step "Injetando no Discord (abre a janela do instalador do mod)"
+    run_inject "$root" "$loc" || true
+    injected_from_checkout "$root" && return 0
+
+    if [ -n "$loc" ] && [ ! -w "$loc" ] && macos_is_system_target "$loc"; then
+        fail "$(macos_permission_failure_message "$loc")"
+    fi
+
+    return 0
+}
+
 inject_mod() {
     local root="$1"
     local -a alvos=()
@@ -671,9 +805,16 @@ inject_mod() {
 
     stop_discord
 
+    # A mensagem do "nao pegou" muda por sistema (ver a checagem depois deste if/elif/else),
+    # mas todo o resto do ramo Darwin fica junto aqui, num unico lugar.
+    local mensagem_falha="A injecao nao pegou. Se o Discord estiver em /usr/share, /opt ou num flatpak, rode: cd $root && sudo pnpm inject"
+
+    if [ "$OS_NAME" = "Darwin" ]; then
+        macos_run_inject "$root" "$loc"
+        mensagem_falha="A injecao nao pegou. Confira se ha mais de um Discord instalado e use --source para apontar o checkout certo."
     # Fora do HOME a injecao precisa de raiz, e o instalador do mod nao pede sozinho: ele so
     # falha com permissao negada. Perguntar antes vale mais que falhar e mandar tentar de novo.
-    if [ -n "$alvo" ] && [ ! -w "$alvo" ]; then
+    elif [ -n "$alvo" ] && [ ! -w "$alvo" ]; then
         printf '  %sO Discord esta em %s, fora do seu HOME.%s\n' "$C_DIM" "$alvo" "$C_OFF" >&2
         can_sudo || fail "A injecao nesse Discord precisa de sudo, e em modo automatico nao da para pedir a senha. Rode sem --yes, ou: cd $root && sudo pnpm inject"
         confirm "A injecao ai precisa de sudo. Posso rodar com sudo?" \
@@ -693,7 +834,7 @@ inject_mod() {
 
     # O pnpm inject sai com 0 mesmo quando o instalador do mod falha, entao o codigo de saida
     # nao serve de prova. Conferir se a injecao realmente passou a apontar para este checkout.
-    injected_from_checkout "$root" || fail "A injecao nao pegou. Se o Discord estiver em /usr/share, /opt ou num flatpak, rode: cd $root && sudo pnpm inject"
+    injected_from_checkout "$root" || fail "$mensagem_falha"
 
     # De novo por conta propria, e nao so confiando no instalador do mod: ele so libera o
     # sandbox quando descobre sozinho que aquilo e um flatpak, e o comando e idempotente.
