@@ -563,6 +563,12 @@ discord_running() {
 }
 
 stop_discord() {
+    local bundle="${1:-}"
+    if [ "$OS_NAME" = "Darwin" ] && [ -n "$bundle" ]; then
+        macos_stop_discord "$bundle"
+        return
+    fi
+
     discord_running || return 0
 
     step "Fechando o Discord"
@@ -712,14 +718,15 @@ ensure_equilotl_cli() {
     printf '%s\n' "$cache"
 }
 
-# Ponto de exec isolado do resto de macos_run_inject_cli para os testes poderem substituir por
-# um espiao e conferir as variaveis de ambiente sem baixar nem rodar o binario de verdade. As
-# tres variaveis chegam pelo ambiente herdado da chamada em macos_run_inject_cli (prefixo
-# VAR=valor), nao redeclaradas aqui, para que um espiao que substitua esta funcao inteira ainda
-# as veja.
+# Ponto de exec isolado do resto de macos_run_inject_cli/macos_run_uninject_cli para os testes
+# poderem substituir por um espiao e conferir as variaveis de ambiente sem baixar nem rodar o
+# binario de verdade. As tres variaveis chegam pelo ambiente herdado da chamada em
+# macos_run_inject_cli/macos_run_uninject_cli (prefixo VAR=valor), nao redeclaradas aqui, para
+# que um espiao que substitua esta funcao inteira ainda as veja. O flag e --install ou
+# --uninstall (cli.go, uninstallFlag): a mesma operacao inversa do mesmo binario.
 macos_exec_equilotl_cli() {
-    local cli="$1" loc="$2"
-    "$cli" --install --location "$loc"
+    local cli="$1" loc="$2" flag="${3:---install}"
+    "$cli" "$flag" --location "$loc"
 }
 
 # As tres variaveis reproduzem o contrato que o wrapper de injecao (Equicord/scripts/
@@ -732,7 +739,20 @@ macos_run_inject_cli() {
     EQUICORD_USER_DATA_DIR="$root" \
     EQUICORD_DIRECTORY="$root/dist/desktop" \
     EQUICORD_DEV_INSTALL=1 \
-    macos_exec_equilotl_cli "$cli" "$loc"
+    macos_exec_equilotl_cli "$cli" "$loc" --install
+}
+
+# Operacao inversa do mesmo binario: desfaz a injecao sem abrir janela, contanto que o mod seja
+# o Equicord (macos_has_cli_installer). Mesmo contrato de variaveis do install: sem elas o
+# Equilotl nao saberia que checkout desfazer.
+macos_run_uninject_cli() {
+    local root="$1" loc="${2:-}" cli
+    [ -n "$loc" ] || return 1
+    cli="$(ensure_equilotl_cli)" || return 1
+    EQUICORD_USER_DATA_DIR="$root" \
+    EQUICORD_DIRECTORY="$root/dist/desktop" \
+    EQUICORD_DEV_INSTALL=1 \
+    macos_exec_equilotl_cli "$cli" "$loc" --uninstall
 }
 
 # So o Equicord tem build de linha de comando para macOS; o Vencord so publica o zip GUI
@@ -785,6 +805,65 @@ macos_run_inject() {
     return 0
 }
 
+# Operacao inversa de macos_run_inject: tenta o build de linha de comando primeiro (sem janela),
+# e so cai para "pnpm uninject" (janela) quando o mod nao tem CLI (Vencord) ou o binario falha.
+# Quem chama confere o resultado por conta propria (injected_from_checkout), do mesmo jeito que
+# a instalacao: o codigo de saida do instalador do mod nao e prova de nada.
+macos_run_uninject() {
+    local root="$1" loc="${2:-}"
+
+    if [ -n "$loc" ] && macos_has_cli_installer "$root"; then
+        step "Desfazendo a injecao pelo build de linha de comando do Equilotl (sem janela)"
+        if macos_run_uninject_cli "$root" "$loc" && ! injected_from_checkout "$root"; then
+            return 0
+        fi
+        warn "O build de linha de comando nao funcionou. Caindo para a janela do instalador do mod."
+    fi
+
+    step "Desfazendo a injecao (abre a janela do instalador do mod)"
+    (cd "$root" && pnpm uninject) || true
+    return 0
+}
+
+# O bundle .app cujo app.asar aponta para este checkout, se a injecao ja tiver acontecido.
+# Vazio (falha) antes da injecao ou quando o checkout nao esta injetado em lugar nenhum. E o
+# elo entre "que checkout" (o que o resto do script raciocina) e "qual canal fechar e reabrir"
+# (o que o macOS precisa para nao mexer no Discord errado quando ha mais de um instalado).
+macos_bundle_for_checkout() {
+    local root="${1:-}" resources
+    resources="$(injected_resources "$root")" || return 1
+    install_location "$resources"
+}
+
+# pkill -f casa o caminho inteiro do processo, nao so o nome -- necessario porque o executavel
+# dentro do bundle se chama so "Discord" nos quatro canais (Contents/MacOS/Discord), e so o
+# caminho do .app diferencia "Discord PTB.app" de "Discord.app". Mata so o canal pedido, mesmo
+# com outro Discord aberto ao lado.
+macos_discord_running() {
+    pgrep -f "$1/Contents/MacOS/" >/dev/null 2>&1
+}
+
+macos_stop_discord() {
+    local bundle="$1" i
+    macos_discord_running "$bundle" || return 0
+
+    step "Fechando o Discord"
+    pkill -f "$bundle/Contents/MacOS/" >/dev/null 2>&1 || true
+
+    for i in $(seq 1 30); do
+        sleep 0.3
+        macos_discord_running "$bundle" || return 0
+    done
+
+    fail "O Discord nao fechou. Feche na mao e rode de novo."
+}
+
+# `open` e o jeito proprio do macOS de abrir um bundle pelo caminho -- nao precisa saber o nome
+# do executavel dentro dele, que muda por canal.
+macos_start_discord() {
+    open "$1" >/dev/null 2>&1 || true
+}
+
 inject_mod() {
     local root="$1"
     local -a alvos=()
@@ -803,7 +882,10 @@ inject_mod() {
         step "Discord instalado por flatpak ($id)"
     fi
 
-    stop_discord
+    # No macOS $loc ja e o bundle .app (install_location resolve para o bundle inteiro), o
+    # mesmo caminho que stop_discord precisa para fechar so o canal certo. Fora do Darwin
+    # stop_discord ignora este argumento.
+    stop_discord "$loc"
 
     # A mensagem do "nao pegou" muda por sistema (ver a checagem depois deste if/elif/else),
     # mas todo o resto do ramo Darwin fica junto aqui, num unico lugar.
@@ -1008,6 +1090,17 @@ select_proxy() {
 }
 
 select_persistence() {
+    local root="${1:-}"
+
+    # O modo temporario promete desfazer a injecao sozinha quando o Discord fechar, sem
+    # ninguem para clicar. No macOS isso so acontece com o Equicord (build de linha de
+    # comando); com o Vencord desfazer abriria a janela do instalador do mod, possivelmente
+    # muito depois de a pessoa ter saido do computador. Por isso nem se oferece a escolha.
+    if [ "$OS_NAME" = "Darwin" ] && ! macos_has_cli_installer "$root"; then
+        warn "Modo temporario indisponivel para $(checkout_mod "$root") no macOS: desfazer a injecao sozinho precisaria de um clique que ninguem vai dar quando o Discord fechar. Instalando permanente."
+        return 0
+    fi
+
     printf '\n  %sComo voce quer deixar o Discord?%s\n\n' "$C_BOLD" "$C_OFF" >&2
     printf '    %s[1] Permanente%s\n' "$C_GREEN" "$C_OFF" >&2
     printf '  %s      O Discord abre com o mod toda vez, ate voce remover.%s\n' "$C_DIM" "$C_OFF" >&2
@@ -1021,7 +1114,14 @@ select_persistence() {
 }
 
 start_discord() {
-    local root="${1:-}" exe id
+    local root="${1:-}" exe id bundle
+
+    if [ "$OS_NAME" = "Darwin" ]; then
+        if bundle="$(macos_bundle_for_checkout "$root")"; then
+            macos_start_discord "$bundle"
+        fi
+        return 0
+    fi
 
     # Quem tem o flatpak e um Discord nativo pela metade acabaria com o nativo aberto, sem o
     # mod, e concluiria que a instalacao falhou. Abrir o mesmo que foi injetado resolve.
@@ -1039,17 +1139,29 @@ start_discord() {
 }
 
 wait_discord_exit() {
-    local root="$1"
+    local root="$1" bundle=""
+    [ "$OS_NAME" = "Darwin" ] && bundle="$(macos_bundle_for_checkout "$root" || true)"
+
     printf '\n'
     ok "Discord aberto com o StreamFix."
     warn "Deixe este terminal aberto. Quando voce fechar o Discord, eu desfaco a injecao."
 
     sleep 5
-    while discord_running; do sleep 2; done
+    if [ "$OS_NAME" = "Darwin" ] && [ -n "$bundle" ]; then
+        while macos_discord_running "$bundle"; do sleep 2; done
+    else
+        while discord_running; do sleep 2; done
+    fi
 
     printf '\n'
     step "Discord fechado, desfazendo a injecao"
-    if (cd "$root" && pnpm uninject); then
+    if [ "$OS_NAME" = "Darwin" ]; then
+        if macos_run_uninject "$root" "$bundle" && ! injected_from_checkout "$root"; then
+            ok "Discord restaurado."
+        else
+            warn "Nao consegui desfazer a injecao sozinho. Rode: cd $root && pnpm uninject"
+        fi
+    elif (cd "$root" && pnpm uninject); then
         ok "Discord restaurado."
     else
         warn "O pnpm uninject falhou. Rode 'pnpm uninject' na pasta do mod."
@@ -1062,7 +1174,7 @@ do_install() {
 
     local proxy permanent=0
     proxy="$(select_proxy)"
-    select_persistence || permanent=1
+    select_persistence "$root" || permanent=1
 
     ensure_toolchain
     copy_plugin "$root"
@@ -1070,7 +1182,9 @@ do_install() {
 
     if injected_from_checkout "$root"; then
         step "O Discord ja carrega deste checkout, so reiniciando"
-        stop_discord
+        local bundle=""
+        [ "$OS_NAME" = "Darwin" ] && bundle="$(macos_bundle_for_checkout "$root" || true)"
+        stop_discord "$bundle"
     else
         inject_mod "$root"
     fi
@@ -1095,9 +1209,10 @@ do_install() {
 }
 
 do_uninstall() {
-    local root target
+    local root target bundle=""
     root="$(find_checkout)" || fail "Nao encontrei o checkout do Equicord/Vencord. Use --source."
     target="$root/src/userplugins/$PLUGIN_DIR_NAME"
+    [ "$OS_NAME" = "Darwin" ] && bundle="$(macos_bundle_for_checkout "$root" || true)"
 
     if [ -d "$target" ]; then
         step "Removendo $target"
@@ -1107,7 +1222,7 @@ do_uninstall() {
     fi
 
     build_mod "$root"
-    stop_discord
+    stop_discord "$bundle"
     start_discord "$root"
 
     printf '\n'
@@ -1115,14 +1230,19 @@ do_uninstall() {
 }
 
 do_restore_everything() {
-    local root target
+    local root target bundle=""
     if root="$(find_checkout)"; then
         target="$root/src/userplugins/$PLUGIN_DIR_NAME"
+        [ "$OS_NAME" = "Darwin" ] && bundle="$(macos_bundle_for_checkout "$root" || true)"
         [ -d "$target" ] && { step "Removendo $target"; rm -rf "$target"; }
 
-        stop_discord
+        stop_discord "$bundle"
         step "Desfazendo a injecao"
-        (cd "$root" && pnpm uninject) || warn "O pnpm uninject falhou."
+        if [ "$OS_NAME" = "Darwin" ]; then
+            macos_run_uninject "$root" "$bundle"
+        else
+            (cd "$root" && pnpm uninject) || warn "O pnpm uninject falhou."
+        fi
     else
         warn "Nao achei o fonte do mod, entao so posso parar por aqui."
     fi
