@@ -263,7 +263,7 @@ O plugin **só funciona no app de computador** (ele usa recursos do Electron que
 
 **Não é necessário.** Por padrão o plugin escolhe e testa uma proxy gratuita sozinho, sem nenhuma dependência extra.
 
-O Tor é só uma opção para quem quer mais estabilidade: ele é mais rápido e não morre no meio do caminho como as proxies públicas. Se você já tiver o [Tor Browser](https://www.torproject.org/download/) aberto, o plugin detecta sozinho em `127.0.0.1:9150`; o daemon `tor` fica em `9050`. Ele também procura em `9052` e `9250` — a `9052` é a que o instalador configura com bridge meek, que atravessa rede censurada.
+O Tor é só uma opção para quem quer mais estabilidade: ele é mais rápido e não morre no meio do caminho como as proxies públicas. Se você já tiver o [Tor Browser](https://www.torproject.org/download/) aberto, o plugin detecta sozinho em `127.0.0.1:9150`; o daemon `tor` fica em `9050`. Ele também procura em `9052` e `9250`, que são portas usadas por configurações de Tor com bridge.
 
 ## Instalação: passo a passo completo
 
