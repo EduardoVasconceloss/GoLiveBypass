@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.1.1](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.1.0...v1.1.1) (2026-08-20)
+
+
+### Bug Fixes
+
+* **instalador:** fazer o --location chegar ao Equilotl, e nao pendurar no sudo ([fb7bc96](https://github.com/EduardoVasconceloss/StreamFix/commit/fb7bc9693ec78d4146bcb21685321fb6794d6a67))
+
 ## [1.1.0](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.0.2...v1.1.0) (2026-08-20)
 
 
