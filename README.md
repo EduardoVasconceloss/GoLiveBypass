@@ -142,6 +142,11 @@ chmod +x streamfix-installer.sh
 ./streamfix-installer.sh
 ```
 
+Funciona com o Discord instalado por **flatpak** (do sistema ou do usuário) e com os pacotes nativos. Ele acha o Discord procurando o `app.asar` de verdade, o que cobre tanto os pacotes que embutem o app quanto o formato atual, em que o pacote traz só um bootstrap e o app é baixado na primeira execução para dentro do seu `~/.config`.
+
+> [!NOTE]
+> No flatpak, um `flatpak update` do Discord refaz a instalação dele e leva a injeção junto — o Go Live para de funcionar até você rodar o instalador de novo. Não tem como evitar pelo nosso lado: quem injeta é o instalador do Equicord/Vencord, e o update substitui o que ele mexeu.
+
 Ao abrir, ele mostra o que encontrou e um menu:
 
 ```
@@ -373,6 +378,8 @@ Reconexão do gateway no meio da sessão não custa mais o desbloqueio — o soc
 - **`Cannot find matching keyid` ao instalar as dependências**: é o corepack, não o plugin. Ele cria o atalho do `pnpm` antes de saber que versão usar, e na primeira execução busca essa versão no registro do npm conferindo a assinatura com chaves embutidas nele — as que vêm no Node 22 estão vencidas. O instalador detecta isso e instala o pnpm pelo npm. Se estiver fazendo à mão, rode `npm install -g pnpm` e siga com `pnpm install`.
 - **Erro de build `Could not resolve "./plugins/userplugins"`**: você copiou a pasta para dentro de `src/plugins/` por engano. O caminho certo é `src/userplugins/streamFix` — a pasta `userplugins` fica em `src/`, **ao lado** de `plugins`, e pode ser necessário criá-la.
 - **Plugin não aparece na lista**: confirme que a pasta está em `src/userplugins/streamFix` (com `index.tsx` e `native.ts`) e que você rodou `pnpm build` + `pnpm inject` e reiniciou o Discord.
+- **Linux, Discord de flatpak abrindo com erro de módulo**: o sandbox do flatpak não enxerga a pasta de build do mod. O instalador libera isso sozinho, mas se falhar (ele avisa na tela) rode `flatpak override --user com.discordapp.Discord --filesystem=/caminho/do/Equicord/dist` — sem o `--user` e com `sudo` se o flatpak for instalação de sistema.
+- **Linux, o Go Live parou depois de um `flatpak update`**: o update do Discord refaz a instalação e desfaz a injeção. Rode o instalador de novo.
 
 ## Estrutura
 
