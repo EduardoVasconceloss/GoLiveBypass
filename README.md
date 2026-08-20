@@ -408,7 +408,7 @@ Veja [CONTRIBUTING.md](CONTRIBUTING.md) para rodar o projeto localmente e propor
 
 ---
 
-StreamFix é um fork de [bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass). <!-- instalador automático originalmente por Vithor (https://github.com/Vith0r) -->
+StreamFix é um fork de [bezumiya/GoLiveBypass](https://github.com/bezumiya/GoLiveBypass); o suporte a flatpak vem do trabalho de [gabrigode](https://github.com/gabrigode). <!-- instalador automático originalmente por Vithor (https://github.com/Vith0r) -->
 
 <details>
 <summary><strong>🇬🇧 English summary</strong> (click to expand)</summary>

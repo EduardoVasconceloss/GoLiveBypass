@@ -548,17 +548,30 @@ build_mod() {
     (cd "$root" && pnpm build) || fail "pnpm build falhou"
 }
 
+# Sem "--" antes do --location, de proposito. O script "inject" do package.json do mod ja
+# termina em "--", e o runInstaller.mjs repassa ao Equilotl tudo o que vem depois do PRIMEIRO
+# "--". Escrever `pnpm inject -- --location X` monta `... -- --install -- --location X`, entao o
+# Equilotl recebe um "--" solto -- e o parser de flags do Go para de ler opcoes ali e descarta o
+# --location. Sem location ele abre o menu interativo de escolha do Discord, que numa instalacao
+# automatica nao tem quem responda: chega EOF, ele aborta com "FATAL ^D", e o instalador cai no
+# ramo do sudo achando que a injecao falhou.
 run_inject() {
     local root="$1" loc="${2:-}"
 
-    # Nem todo pnpm come o -- antes de repassar o resto, e o instalador do mod que recebe um --
-    # solto para de ler opcoes ali e ignora o --location. Nao da para impedir de fora; da para
-    # cair no caminho de sempre, que e o instalador do mod perguntando qual Discord usar.
-    if [ -n "$loc" ] && (cd "$root" && pnpm run inject -- --location "$loc"); then
+    if [ -n "$loc" ] && (cd "$root" && pnpm inject --location "$loc"); then
         return 0
     fi
 
     (cd "$root" && pnpm inject)
+}
+
+# Em modo automatico nao existe ninguem para digitar a senha, e um sudo que precise dela fica
+# pendurado sem prazo. O -n falha na hora em vez de perguntar, entao da para decidir antes de
+# chamar. No modo interativo segue valendo deixar o sudo perguntar normalmente.
+can_sudo() {
+    sudo -n true 2>/dev/null && return 0
+    [ "$ASSUME_YES" -eq 1 ] && return 1
+    return 0
 }
 
 # O sudo limpa o ambiente, e sem PATH nem o pnpm nem o node sobrevivem. E o instalador do mod
@@ -568,7 +581,7 @@ run_inject_root() {
     local root="$1" loc="${2:-}" rc=0
     local -a cmd
     if [ -n "$loc" ]; then
-        cmd=(pnpm run inject -- --location "$loc")
+        cmd=(pnpm inject --location "$loc")
     else
         cmd=(pnpm inject)
     fi
@@ -608,6 +621,7 @@ inject_mod() {
     # falha com permissao negada. Perguntar antes vale mais que falhar e mandar tentar de novo.
     if [ -n "$alvo" ] && [ ! -w "$alvo" ]; then
         printf '  %sO Discord esta em %s, fora do seu HOME.%s\n' "$C_DIM" "$alvo" "$C_OFF" >&2
+        can_sudo || fail "A injecao nesse Discord precisa de sudo, e em modo automatico nao da para pedir a senha. Rode sem --yes, ou: cd $root && sudo pnpm inject"
         confirm "A injecao ai precisa de sudo. Posso rodar com sudo?" \
             || fail "Sem sudo nao da para injetar nesse Discord. Rode: cd $root && sudo pnpm inject"
         step "Injetando no Discord"
@@ -618,7 +632,7 @@ inject_mod() {
 
         # O instalador do mod tambem cai aqui quando o Discord escolhido na lista dele estava
         # fora do HOME, e ai o sudo so aparece como opcao depois.
-        if ! injected_from_checkout "$root" && confirm "Nao pegou. Tentar de novo com sudo?"; then
+        if ! injected_from_checkout "$root" && can_sudo && confirm "Nao pegou. Tentar de novo com sudo?"; then
             run_inject_root "$root" "$loc" || true
         fi
     fi
