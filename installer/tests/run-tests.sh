@@ -525,6 +525,33 @@ test_macos_run_inject_pula_cli_para_vencord() {
     fixture_teardown
 }
 
+test_macos_run_inject_explica_o_clique_para_vencord() {
+    printf '\n== injecao (Darwin): antes da janela, explica o que clicar ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Vencord"
+    make_checkout "$checkout" "vencord"
+    local bundle="$FS_PREFIX/Applications/Discord.app"
+    local resources="$bundle/Contents/Resources"
+    mkdir -p "$resources"
+
+    run_inject() { make_injected "$resources" "$checkout"; }
+
+    local saida
+    saida="$(macos_run_inject "$checkout" "$bundle" 2>&1)"
+
+    case "$saida" in
+        *Install*) assert_true "menciona o botao Install" true ;;
+        *) assert_true "menciona o botao Install" false ;;
+    esac
+    case "$saida" in
+        *Discord.app*) assert_true "menciona o bundle certo para escolher na lista" true ;;
+        *) assert_true "menciona o bundle certo para escolher na lista" false ;;
+    esac
+
+    unset -f run_inject
+    fixture_teardown
+}
+
 test_macos_run_inject_degrada_quando_cli_falha() {
     printf '\n== injecao (Darwin): download do CLI falhando degrada pra janela, nao aborta ==\n'
     fixture_setup Darwin
@@ -772,6 +799,91 @@ test_select_persistence_oferece_temporario_equicord_macos() {
     fixture_teardown
 }
 
+# ------------------------------------------------------------- instalacao sem perguntas (--yes)
+
+test_do_install_falha_cedo_vencord_macos_assume_yes() {
+    printf '\n== instalacao (Darwin): --yes com Vencord falha cedo, antes de compilar ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Vencord"
+    make_checkout "$checkout" "vencord"
+
+    select_target() { printf '%s\n' "$checkout"; }
+    # Se o guard nao barrar antes, o fluxo chegaria aqui: o sentinela na saida denuncia isso.
+    ensure_toolchain() { fail "NAO_DEVERIA_CHEGAR_AQUI"; }
+
+    local prev="$ASSUME_YES" rc=0 saida
+    ASSUME_YES=1
+    saida="$(do_install "$checkout" </dev/null 2>&1)"; rc=$?
+    ASSUME_YES="$prev"
+
+    assert_eq "sai com erro" "1" "$rc"
+    case "$saida" in
+        *NAO_DEVERIA_CHEGAR_AQUI*) assert_true "nao chega a instalar o toolchain" false ;;
+        *) assert_true "nao chega a instalar o toolchain" true ;;
+    esac
+    case "$saida" in
+        *"--yes"*) assert_true "explica que o modo --yes nao tem quem clique na janela" true ;;
+        *) assert_true "explica que o modo --yes nao tem quem clique na janela" false ;;
+    esac
+
+    unset -f select_target ensure_toolchain
+    fixture_teardown
+}
+
+test_do_install_nao_falha_cedo_vencord_ja_injetado_macos_assume_yes() {
+    printf '\n== instalacao (Darwin): --yes com Vencord ja injetado so reinicia, sem barrar ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Vencord"
+    make_checkout "$checkout" "vencord"
+    local bundle="$FS_PREFIX/Applications/Discord.app"
+    local resources="$bundle/Contents/Resources"
+    make_injected "$resources" "$checkout"
+
+    select_target() { printf '%s\n' "$checkout"; }
+    select_proxy() { printf '\n'; }
+    # Um checkout ja injetado nunca chega perto da janela do instalador do mod (do_install so
+    # reinicia o Discord nesse caso); o sentinela confere que o guard nao barra sem necessidade.
+    ensure_toolchain() { fail "CHEGOU_NO_TOOLCHAIN"; }
+
+    local prev="$ASSUME_YES" saida
+    ASSUME_YES=1
+    saida="$(do_install "$checkout" </dev/null 2>&1)"
+    ASSUME_YES="$prev"
+
+    case "$saida" in
+        *CHEGOU_NO_TOOLCHAIN*) assert_true "nao barra um Vencord ja injetado (nao precisaria da janela)" true ;;
+        *) assert_true "nao barra um Vencord ja injetado (nao precisaria da janela)" false ;;
+    esac
+
+    unset -f select_target select_proxy ensure_toolchain
+    fixture_teardown
+}
+
+test_do_install_nao_falha_cedo_equicord_macos_assume_yes() {
+    printf '\n== instalacao (Darwin): --yes com Equicord segue normal (tem CLI) ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+
+    select_target() { printf '%s\n' "$checkout"; }
+    select_proxy() { printf '\n'; }
+    # Marca que o fluxo normal seguiu ate aqui, sem rodar pnpm de verdade.
+    ensure_toolchain() { fail "CHEGOU_NO_TOOLCHAIN"; }
+
+    local prev="$ASSUME_YES" saida
+    ASSUME_YES=1
+    saida="$(do_install "$checkout" </dev/null 2>&1)"
+    ASSUME_YES="$prev"
+
+    case "$saida" in
+        *CHEGOU_NO_TOOLCHAIN*) assert_true "nao barra o Equicord (tem build de linha de comando)" true ;;
+        *) assert_true "nao barra o Equicord (tem build de linha de comando)" false ;;
+    esac
+
+    unset -f select_target select_proxy ensure_toolchain
+    fixture_teardown
+}
+
 # ------------------------------------------------------------------------------- sourcing
 
 test_guarda_de_sourcing() {
@@ -808,6 +920,7 @@ test_macos_cli_sem_location_nao_roda
 test_macos_so_equicord_tem_cli
 test_macos_run_inject_tenta_cli_primeiro_para_equicord
 test_macos_run_inject_pula_cli_para_vencord
+test_macos_run_inject_explica_o_clique_para_vencord
 test_macos_run_inject_degrada_quando_cli_falha
 test_macos_permissao_alvo_de_sistema
 test_macos_mensagem_permissao_cobre_as_duas_causas
@@ -820,6 +933,9 @@ test_macos_bundle_for_checkout_sem_injecao
 test_macos_discord_running_por_canal
 test_select_persistence_nega_temporario_vencord_macos
 test_select_persistence_oferece_temporario_equicord_macos
+test_do_install_falha_cedo_vencord_macos_assume_yes
+test_do_install_nao_falha_cedo_vencord_ja_injetado_macos_assume_yes
+test_do_install_nao_falha_cedo_equicord_macos_assume_yes
 test_checkout_mod
 test_guarda_de_sourcing
 
