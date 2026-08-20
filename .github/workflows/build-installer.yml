@@ -1,6 +1,6 @@
 name: Build installer .exe
 
-# Builds the two .exe installers from the .ps1 sources in this exact repo/commit, on GitHub's
+# Builds the GUI .exe installer from its .ps1 source in this exact repo/commit, on GitHub's
 # own runner -- not on someone's local machine. This is the reproducible-build prerequisite
 # for a project-level code-signing program (e.g. SignPath Foundation, https://signpath.org):
 # they sign builds their own infrastructure can verify came from the public source, not an
@@ -13,7 +13,7 @@ on:
   workflow_dispatch:
     inputs:
       tag:
-        description: "Existing release tag to attach the built .exe to (optional; skips upload if empty)"
+        description: "Existing release tag to attach the built files to (optional; skips upload if empty)"
         required: false
         default: ""
   # Chamado direto pelo release-please.yml quando ele corta uma release: um push de tag feito
@@ -42,7 +42,7 @@ jobs:
         shell: pwsh
         run: Install-Module -Name ps2exe -Force -Scope CurrentUser
 
-      # A versao gravada nos .exe sai da tag que disparou o build, senao o executavel
+      # A versao gravada no .exe sai da tag que disparou o build, senao o executavel
       # continuaria anunciando 1.0.0.0 pra sempre. ps2exe exige quatro campos numericos,
       # entao "v1.2.3" vira "1.2.3.0"; sem tag (workflow_dispatch solto) fica 0.0.0.0.
       - name: Resolve version from tag
@@ -55,20 +55,15 @@ jobs:
           } else {
             $version = "0.0.0.0"
           }
-          Write-Host "Versao dos .exe: $version (tag: $tag)"
+          Write-Host "Versao do .exe: $version (tag: $tag)"
           "EXE_VERSION=$version" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
-      - name: Compile StreamFix-Installer.exe (terminal)
-        shell: pwsh
-        run: |
-          Invoke-ps2exe `
-            -inputFile "installer/StreamFix-Installer.ps1" `
-            -outputFile "installer/StreamFix-Installer.exe" `
-            -title "StreamFix Installer" `
-            -description "Instala o StreamFix no Equicord ou Vencord (terminal)" `
-            -product "StreamFix" `
-            -version "$env:EXE_VERSION"
-
+      # So a GUI vira .exe. O instalador de terminal tinha um .exe tambem, e ele nao servia pra
+      # nada que o .bat nao servisse melhor: o .bat da o mesmo duplo clique, resolve sozinho a
+      # ultima release em vez de ficar congelado no que foi compilado, e nao e um binario sem
+      # assinatura -- que e justamente o que o SmartScreen avisa e o Controle Inteligente de
+      # Aplicativos do Windows 11 recusa de vez. Ter os dois so dava mais um arquivo pra escolher
+      # na pagina da release, e o pior dos dois.
       - name: Compile StreamFix-Installer-GUI.exe
         shell: pwsh
         run: |
@@ -81,8 +76,8 @@ jobs:
             -product "StreamFix" `
             -version "$env:EXE_VERSION"
 
-      # TODO (apos aprovacao no SignPath Foundation ou programa equivalente): assinar os dois
-      # .exe aqui, antes de calcular o hash e subir como artifact/release asset.
+      # TODO (apos aprovacao no SignPath Foundation ou programa equivalente): assinar o .exe
+      # aqui, antes de calcular o hash e subir como artifact/release asset.
 
       # Os scripts vao junto dos .exe, e nao so os binarios compilados. Sao eles o ponto de
       # entrada de quem instala no Linux (.sh) e de quem, no Windows, prefere nao rodar um .exe
@@ -93,7 +88,6 @@ jobs:
         shell: pwsh
         run: |
           $files = @(
-            "installer/StreamFix-Installer.exe"
             "installer/StreamFix-Installer-GUI.exe"
             "installer/StreamFix-Installer.ps1"
             "installer/StreamFix-Installer-GUI.ps1"
@@ -110,7 +104,6 @@ jobs:
         with:
           name: streamfix-installer
           path: |
-            installer/StreamFix-Installer.exe
             installer/StreamFix-Installer-GUI.exe
             installer/StreamFix-Installer.ps1
             installer/StreamFix-Installer-GUI.ps1
@@ -126,10 +119,9 @@ jobs:
         run: |
           tag="${{ inputs.tag }}"
           if [ -z "$tag" ]; then tag="${GITHUB_REF#refs/tags/}"; fi
-          # SHA256SUMS.txt vai junto: enquanto os .exe nao sao assinados, conferir o hash e a
-          # unica forma de quem baixa verificar que o binario e o que este build produziu.
+          # SHA256SUMS.txt vai junto: enquanto o .exe nao e assinado, conferir o hash e a unica
+          # forma de quem baixa verificar que o que ele pegou e o que este build produziu.
           gh release upload "$tag" \
-            installer/StreamFix-Installer.exe \
             installer/StreamFix-Installer-GUI.exe \
             installer/StreamFix-Installer.ps1 \
             installer/StreamFix-Installer-GUI.ps1 \

@@ -129,10 +129,20 @@ Um script encontra sozinho o Equicord ou o Vencord que você tem, instala o plug
 
 **Windows, jeito mais simples:** baixe o [`StreamFix-Installer.bat`](installer/StreamFix-Installer.bat) e dê dois cliques. Ele libera a execução só para aquele processo (`Set-ExecutionPolicy -Scope Process -ExecutionPolicy Bypass`), baixa o `.ps1` se ele não estiver do lado, e roda tudo.
 
-**Windows, com janela:** a página de [**releases**](https://github.com/EduardoVasconceloss/StreamFix/releases/latest) traz `StreamFix-Installer-GUI.exe` (com janela) e `StreamFix-Installer.exe` (terminal), compilados pelo GitHub Actions a partir do código deste repositório. Cada release traz também os scripts em si — `StreamFix-Installer.ps1`, `StreamFix-Installer-GUI.ps1`, `StreamFix-Installer.bat` e `streamfix-installer.sh` — e um `SHA256SUMS.txt` cobrindo todos eles.
+**Windows, com janela:** a página de [**releases**](https://github.com/EduardoVasconceloss/StreamFix/releases/latest) traz o `StreamFix-Installer-GUI.exe`, compilado pelo GitHub Actions a partir do código deste repositório.
+
+Cada release carrega estes arquivos, e um `SHA256SUMS.txt` cobrindo todos:
+
+| Quero… | Baixe |
+|---|---|
+| só instalar, sem pensar muito | `StreamFix-Installer.bat` — dois cliques, terminal |
+| uma janela em vez de terminal | `StreamFix-Installer-GUI.exe` |
+| o Windows bloqueou o `.exe` | `StreamFix-Installer-GUI.ps1` (janela) ou `StreamFix-Installer.bat` |
+| instalar no Linux | `streamfix-installer.sh` |
+| ler o código antes de rodar | os `.ps1` e o `.sh` — é o mesmo código, sem compilar |
 
 > [!NOTE]
-> O Windows pode bloquear esses `.exe` — SmartScreen avisando "fornecedor desconhecido", ou o **Controle Inteligente de Aplicativos** (padrão em instalações novas do Windows 11) recusando de vez, sem opção de executar mesmo assim. O motivo é o mesmo nos dois casos: o executável ainda não é assinado digitalmente. Enquanto a assinatura não sai, use o `.bat` acima ou o `.ps1` abaixo — é o mesmo código, interpretado em vez de compilado, e não passa por esse bloqueio.
+> O Windows pode bloquear esse `.exe` — SmartScreen avisando "fornecedor desconhecido", ou o **Controle Inteligente de Aplicativos** (padrão em instalações novas do Windows 11) recusando de vez, sem opção de executar mesmo assim. O motivo é que o executável ainda não é assinado digitalmente. Enquanto a assinatura não sai, use o `.bat` ou os `.ps1` — é o mesmo código, interpretado em vez de compilado, e não passa pela verificação que barra binários.
 
 **Linux:**
 
