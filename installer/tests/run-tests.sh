@@ -372,6 +372,210 @@ test_macos_settings_path() {
     fixture_teardown
 }
 
+# ------------------------------------------------------------------- macOS: injecao via CLI
+
+test_macos_cli_arch() {
+    printf '\n== injecao (Darwin): sufixo de asset por arquitetura ==\n'
+    fixture_setup Darwin
+
+    MACOS_ARCH="arm64"
+    assert_eq "Apple Silicon usa o sufixo arm64" "arm64" "$(macos_cli_arch)"
+
+    MACOS_ARCH="x64"
+    assert_eq "Intel usa o sufixo x64" "x64" "$(macos_cli_arch)"
+
+    MACOS_ARCH=""
+    fixture_teardown
+}
+
+test_macos_cli_cache_path() {
+    printf '\n== injecao (Darwin): caminho do cache do binario ==\n'
+    fixture_setup Darwin
+
+    assert_eq "cache fica na pasta de caches do usuario, nao na de suporte a aplicativos" \
+        "$HOME/Library/Caches/StreamFix/EquilotlCli-darwin-arm64" \
+        "$(macos_equilotl_cli_cache_path "arm64")"
+
+    fixture_teardown
+}
+
+test_macos_cli_reaproveita_cache() {
+    printf '\n== injecao (Darwin): reaproveita o binario ja em cache ==\n'
+    fixture_setup Darwin
+    MACOS_ARCH="arm64"
+
+    local cache="$HOME/Library/Caches/StreamFix/EquilotlCli-darwin-arm64"
+    mkdir -p "$(dirname "$cache")"
+    printf '#!/bin/sh\n' > "$cache"
+    chmod +x "$cache"
+
+    assert_eq "devolve o caminho em cache sem tentar baixar de novo" \
+        "$cache" "$(ensure_equilotl_cli)"
+
+    MACOS_ARCH=""
+    fixture_teardown
+}
+
+test_macos_cli_sem_curl_nem_wget_falha() {
+    printf '\n== injecao (Darwin): sem curl nem wget, falha em vez de travar ==\n'
+    fixture_setup Darwin
+    MACOS_ARCH="arm64"
+
+    have() { return 1; }
+    assert_false "ensure_equilotl_cli falha sem um jeito de baixar" ensure_equilotl_cli
+    unset -f have
+
+    MACOS_ARCH=""
+    fixture_teardown
+}
+
+test_macos_cli_contrato_de_variaveis() {
+    printf '\n== injecao (Darwin): variaveis de ambiente do contrato do wrapper ==\n'
+    fixture_setup Darwin
+    MACOS_ARCH="arm64"
+
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+    local cache="$HOME/Library/Caches/StreamFix/EquilotlCli-darwin-arm64"
+    mkdir -p "$(dirname "$cache")"
+    printf '#!/bin/sh\n' > "$cache"
+    chmod +x "$cache"
+
+    local capturado=""
+    macos_exec_equilotl_cli() {
+        capturado="USER_DATA=$EQUICORD_USER_DATA_DIR DIRECTORY=$EQUICORD_DIRECTORY DEV_INSTALL=$EQUICORD_DEV_INSTALL LOC=$2"
+    }
+
+    macos_run_inject_cli "$checkout" "$FS_PREFIX/Applications/Discord.app"
+
+    assert_eq "as tres variaveis do contrato e o --location chegam certas" \
+        "USER_DATA=$checkout DIRECTORY=$checkout/dist/desktop DEV_INSTALL=1 LOC=$FS_PREFIX/Applications/Discord.app" \
+        "$capturado"
+
+    unset -f macos_exec_equilotl_cli
+    MACOS_ARCH=""
+    fixture_teardown
+}
+
+test_macos_cli_sem_location_nao_roda() {
+    printf '\n== injecao (Darwin): sem --location explicito, nao tenta rodar ==\n'
+    fixture_setup Darwin
+
+    assert_false "macos_run_inject_cli recusa sem um --location explicito" \
+        macos_run_inject_cli "$HOME/Equicord" ""
+
+    fixture_teardown
+}
+
+test_macos_so_equicord_tem_cli() {
+    printf '\n== injecao (Darwin): so o Equicord tem build de linha de comando ==\n'
+    fixture_setup Darwin
+
+    local equicord="$HOME/Equicord" vencord="$HOME/Vencord"
+    make_checkout "$equicord" "equicord"
+    make_checkout "$vencord" "vencord"
+
+    assert_true "Equicord tem CLI no macOS" macos_has_cli_installer "$equicord"
+    assert_false "Vencord nao tem CLI no macOS (so publica o zip GUI)" macos_has_cli_installer "$vencord"
+
+    fixture_teardown
+}
+
+test_macos_run_inject_tenta_cli_primeiro_para_equicord() {
+    printf '\n== injecao (Darwin): Equicord tenta o CLI antes da janela ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+    local bundle="$FS_PREFIX/Applications/Discord.app"
+    local resources="$bundle/Contents/Resources"
+    mkdir -p "$resources"
+
+    local cli_chamado=0 gui_chamado=0
+    macos_run_inject_cli() { cli_chamado=1; make_injected "$resources" "$checkout"; return 0; }
+    run_inject() { gui_chamado=1; }
+
+    macos_run_inject "$checkout" "$bundle" >/dev/null 2>&1
+
+    assert_eq "tenta o build de linha de comando" "1" "$cli_chamado"
+    assert_eq "nao abre a janela quando o build de linha de comando pega" "0" "$gui_chamado"
+
+    unset -f macos_run_inject_cli run_inject
+    fixture_teardown
+}
+
+test_macos_run_inject_pula_cli_para_vencord() {
+    printf '\n== injecao (Darwin): Vencord vai direto pra janela ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Vencord"
+    make_checkout "$checkout" "vencord"
+    local bundle="$FS_PREFIX/Applications/Discord.app"
+    local resources="$bundle/Contents/Resources"
+    mkdir -p "$resources"
+
+    local cli_chamado=0 gui_chamado=0
+    macos_run_inject_cli() { cli_chamado=1; return 1; }
+    run_inject() { gui_chamado=1; make_injected "$resources" "$checkout"; }
+
+    macos_run_inject "$checkout" "$bundle" >/dev/null 2>&1
+
+    assert_eq "nao tenta o build de linha de comando (Vencord nao tem CLI no macOS)" "0" "$cli_chamado"
+    assert_eq "abre a janela do instalador direto" "1" "$gui_chamado"
+
+    unset -f macos_run_inject_cli run_inject
+    fixture_teardown
+}
+
+test_macos_run_inject_degrada_quando_cli_falha() {
+    printf '\n== injecao (Darwin): download do CLI falhando degrada pra janela, nao aborta ==\n'
+    fixture_setup Darwin
+    local checkout="$HOME/Equicord"
+    make_checkout "$checkout" "equicord"
+    local bundle="$FS_PREFIX/Applications/Discord.app"
+    local resources="$bundle/Contents/Resources"
+    mkdir -p "$resources"
+
+    local gui_chamado=0
+    macos_run_inject_cli() { return 1; }
+    run_inject() { gui_chamado=1; make_injected "$resources" "$checkout"; }
+
+    assert_true "macos_run_inject nao aborta quando o download do CLI falha" \
+        macos_run_inject "$checkout" "$bundle"
+    assert_eq "cai para a janela do instalador do mod" "1" "$gui_chamado"
+
+    unset -f macos_run_inject_cli run_inject
+    fixture_teardown
+}
+
+test_macos_permissao_alvo_de_sistema() {
+    printf '\n== injecao (Darwin): distincao usuario/sistema para a mensagem de permissao ==\n'
+    fixture_setup Darwin
+
+    assert_true "bundle em /Applications e alvo de sistema" \
+        macos_is_system_target "$FS_PREFIX/Applications/Discord.app"
+    assert_false "bundle em ~/Applications nao e alvo de sistema" \
+        macos_is_system_target "$HOME/Applications/Discord.app"
+
+    fixture_teardown
+}
+
+test_macos_mensagem_permissao_cobre_as_duas_causas() {
+    printf '\n== injecao (Darwin): mensagem de falha de permissao cobre as duas causas ==\n'
+    fixture_setup Darwin
+
+    local msg
+    msg="$(macos_permission_failure_message "$FS_PREFIX/Applications/Discord.app")"
+    case "$msg" in
+        *"administrador"*"Gerenciamento de Apps"*)
+            assert_true "menciona conta sem admin e a permissao de Gerenciamento de Apps" true
+            ;;
+        *)
+            assert_true "menciona conta sem admin e a permissao de Gerenciamento de Apps" false
+            ;;
+    esac
+
+    fixture_teardown
+}
+
 # --------------------------------------------------------------------- identificacao de mod
 
 test_checkout_mod() {
@@ -420,6 +624,18 @@ test_macos_quatro_canais
 test_macos_injetado
 test_macos_sem_flatpak
 test_macos_settings_path
+test_macos_cli_arch
+test_macos_cli_cache_path
+test_macos_cli_reaproveita_cache
+test_macos_cli_sem_curl_nem_wget_falha
+test_macos_cli_contrato_de_variaveis
+test_macos_cli_sem_location_nao_roda
+test_macos_so_equicord_tem_cli
+test_macos_run_inject_tenta_cli_primeiro_para_equicord
+test_macos_run_inject_pula_cli_para_vencord
+test_macos_run_inject_degrada_quando_cli_falha
+test_macos_permissao_alvo_de_sistema
+test_macos_mensagem_permissao_cobre_as_duas_causas
 test_checkout_mod
 test_guarda_de_sourcing
 
