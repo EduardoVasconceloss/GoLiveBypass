@@ -69,6 +69,15 @@ confirm() {
 
 have() { command -v "$1" >/dev/null 2>&1; }
 
+lower() { tr '[:upper:]' '[:lower:]' <<<"${1:-}"; }
+upper() { tr '[:lower:]' '[:upper:]' <<<"${1:-}"; }
+
+# GNU stat usa -c%s; o BSD/macOS usa -f%z. Sem nenhum dos dois (raro), cai pro wc -c, que e
+# POSIX mas le o arquivo inteiro em vez de so consultar o inode.
+file_size() {
+    stat -c%s "$1" 2>/dev/null || stat -f%z "$1" 2>/dev/null || wc -c <"$1" 2>/dev/null || echo 0
+}
+
 # O id do flatpak a que um caminho pertence, ou nada se o caminho nao for de flatpak. Serve
 # para os dois lugares onde o Discord de flatpak aparece: o deploy em .../flatpak/app/<id>/ e
 # o HOME do sandbox em ~/.var/app/<id>/.
@@ -250,7 +259,7 @@ injected_path() {
     local resources="$1" file text
     for file in "$resources/app/index.js" "$resources/app.asar"; do
         [ -f "$file" ] || continue
-        [ "$(stat -c%s "$file" 2>/dev/null || echo 0)" -lt 65536 ] || continue
+        [ "$(file_size "$file")" -lt 65536 ] || continue
         text="$(tr -d '\0' < "$file" 2>/dev/null || true)"
         if [[ "$text" =~ require\(\"([^\"]+)\"\) ]]; then
             printf '%s\n' "${BASH_REMATCH[1]}"
@@ -265,7 +274,7 @@ installed_mod() {
     while IFS= read -r resources; do
         path="$(injected_path "$resources" || true)"
         [ -n "$path" ] || continue
-        case "${path,,}" in
+        case "$(lower "$path")" in
             *equibop*) echo "Equibop"; return 0 ;;
             *equicord*) echo "Equicord"; return 0 ;;
             *vesktop*) echo "Vesktop"; return 0 ;;
@@ -356,7 +365,7 @@ injected_flatpak_id() {
 
 choose_mod() {
     if [ -n "$MOD" ]; then
-        case "${MOD,,}" in
+        case "$(lower "$MOD")" in
             equicord) echo "Equicord"; return 0 ;;
             vencord) echo "Vencord"; return 0 ;;
             *) fail "--mod aceita equicord ou vencord" ;;
@@ -611,7 +620,10 @@ inject_mod() {
     local -a alvos=()
     local alvo="" loc="" id=""
 
-    mapfile -t alvos < <(discord_resources)
+    local resources
+    while IFS= read -r resources; do
+        alvos+=("$resources")
+    done < <(discord_resources)
     if [ "${#alvos[@]}" -eq 1 ]; then
         alvo="${alvos[0]}"
         loc="$(install_location "$alvo")"
@@ -663,13 +675,13 @@ checkout_mod() {
     if [ -f "$manifest" ]; then
         local name
         name="$(node -e 'try{process.stdout.write(String(require(process.argv[1]).name||""))}catch(e){}' "$manifest" 2>/dev/null || true)"
-        case "${name,,}" in
+        case "$(lower "$name")" in
             *equicord*) echo "Equicord"; return 0 ;;
             *vencord*) echo "Vencord"; return 0 ;;
         esac
     fi
 
-    case "$(basename "$root" | tr '[:upper:]' '[:lower:]')" in
+    case "$(lower "$(basename "$root")")" in
         *vencord*) echo "Vencord" ;;
         *) echo "Equicord" ;;
     esac
@@ -690,7 +702,7 @@ mod_settings_file() {
         return 0
     fi
 
-    local override="${mod^^}_USER_DATA_DIR"
+    local override="$(upper "$mod")_USER_DATA_DIR"
     if [ -n "${!override:-}" ]; then
         printf '%s\n' "${!override}/settings/settings.json"
         return 0

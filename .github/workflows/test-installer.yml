@@ -1,7 +1,8 @@
-name: Testar instalador Linux
+name: Testar instalador
 
 # Roda os testes de caracterizacao da descoberta e a analise estatica de shell a cada PR, para
-# pegar bashismo e regressao de descoberta antes da revisao humana. Ver installer/tests/.
+# pegar bashismo e regressao de descoberta antes da revisao humana. Ver installer/tests/. O job
+# macos roda o mesmo conjunto sob o bash 3.2 do sistema, que e onde bashismo de bash 4 aparece.
 
 on:
   pull_request:
@@ -23,3 +24,20 @@ jobs:
         uses: ludeeus/action-shellcheck@master
         with:
           scandir: installer
+
+  test-macos:
+    # O runner traz o bash 3.2 que a Apple parou de atualizar (GPLv3), o mesmo que qualquer Mac
+    # tem em /bin/bash. Roda com ele, e nao com um bash mais novo que o runner tambem tenha,
+    # pra pegar de verdade os bashismos de bash 4 que so aparecem no Mac de um usuario.
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Confirmar que o runner tem o bash 3.2
+        run: /bin/bash --version | head -n1 | grep -q 'version 3\.2' || { echo "/bin/bash do runner nao e 3.2"; /bin/bash --version; exit 1; }
+
+      - name: Rodar os testes de descoberta sob o bash do sistema
+        run: /bin/bash installer/tests/run-tests.sh
+
+      - name: Confirmar que o instalador abre (--help) sob o bash do sistema
+        run: /bin/bash installer/streamfix-installer.sh --help
