@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.0.2](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.0.1...v1.0.2) (2026-08-20)
+
+
+### Bug Fixes
+
+* anexar o SHA256SUMS.txt na release ([42430b9](https://github.com/EduardoVasconceloss/StreamFix/commit/42430b9531558ff84fe7f650537a1cf8c9873da1))
+* nao deixar a saida de comando nativo virar valor de retorno ([11767b6](https://github.com/EduardoVasconceloss/StreamFix/commit/11767b624c978fe3eaf5e89fbf3951f3cce15be6))
+
 ## [1.0.1](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.0.0...v1.0.1) (2026-08-20)
 
 
