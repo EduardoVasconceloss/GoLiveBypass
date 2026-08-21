@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.2](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.2.1...v1.2.2) (2026-08-21)
+
+
+### Bug Fixes
+
+* **streamfix:** rotear hosts regionais do gateway e reconectar sozinho quando a saida morre ([1d73b6d](https://github.com/EduardoVasconceloss/StreamFix/commit/1d73b6db6f3428c493a33064efc6d63a2ea83bd6))
+* **streamfix:** rotear hosts regionais do gateway e reconectar sozinho quando a saida morre ([6f3d42b](https://github.com/EduardoVasconceloss/StreamFix/commit/6f3d42b9a4e205fc1c69a69bda9384192a828043))
+
 ## [1.2.1](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.2.0...v1.2.1) (2026-08-21)
 
 
