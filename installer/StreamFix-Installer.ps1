@@ -161,6 +161,39 @@ function Test-Tool($name) {
     return [bool] (Get-Command $name -ErrorAction SilentlyContinue)
 }
 
+# pnpm recente exige esse minimo de Node pra rodar (corepack aborta com "This version of pnpm
+# requires at least Node.js vX" quando nao bate) -- so existir um "node" no PATH nao basta.
+$MinNodeVersion = [version]'22.13.0'
+
+function Get-NodeVersionAt($nodeExe) {
+    $raw = & $nodeExe --version 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $raw) { return $null }
+    try { return [version] ($raw.Trim().TrimStart('v')) } catch { return $null }
+}
+
+# Quem ja tem um Node novo instalado do lado de um antigo (ou trocou de versao sem tirar a
+# anterior) nao devia precisar desinstalar nada so pra rodar o instalador -- procuramos nos
+# locais de instalacao comuns por um Node que ja atenda o minimo e usamos esse, sem mexer no
+# PATH permanente da maquina.
+function Find-NewerNodeDir($minVersion) {
+    $candidates = @(
+        (Join-Path $env:ProgramFiles 'nodejs')
+        (Join-Path ${env:ProgramFiles(x86)} 'nodejs')
+        (Join-Path $env:LOCALAPPDATA 'Programs\nodejs')
+    ) | Where-Object { $_ -and (Test-Path -LiteralPath (Join-Path $_ 'node.exe')) }
+
+    $best = $null
+    $bestVersion = $null
+    foreach ($dir in $candidates) {
+        $version = Get-NodeVersionAt (Join-Path $dir 'node.exe')
+        if ($version -and $version -ge $minVersion -and (-not $bestVersion -or $version -gt $bestVersion)) {
+            $best = $dir
+            $bestVersion = $version
+        }
+    }
+    return $best
+}
+
 # O corepack cria o atalho do pnpm antes de saber que versao usar. Na primeira execucao ele
 # busca essa versao no registro do npm e confere a assinatura com chaves embutidas nele; as
 # chaves do corepack que vem no Node 22 estao velhas, entao o atalho existe e mesmo assim
@@ -437,6 +470,39 @@ function Install-Toolchain($root = $null) {
         }
 
         Write-Ok 'Instalado. Seguindo sem precisar reabrir o terminal.'
+    }
+
+    # "node" existir no PATH nao quer dizer que e novo o suficiente -- quem tem uma instalacao
+    # antiga na frente do PATH (ou nunca reabriu o terminal depois de instalar uma nova) cai
+    # direto no "pnpm requires at least Node.js vX" mais adiante, sem nenhum contexto.
+    $nodeVersion = Get-NodeVersionAt 'node'
+    if ($nodeVersion -and $nodeVersion -lt $MinNodeVersion) {
+        Write-Warn "O Node do PATH ($nodeVersion) e mais antigo que o exigido ($MinNodeVersion)."
+
+        $newerNodeDir = Find-NewerNodeDir $MinNodeVersion
+        if ($newerNodeDir) {
+            Write-Ok "Achei um Node mais novo em $newerNodeDir -- usando ele so pra esta instalacao, sem mexer no seu PATH."
+            $env:Path = "$newerNodeDir;$env:Path"
+        } else {
+            Write-Warn 'Nenhuma instalacao de Node compativel encontrada. Instalando a versao mais recente.'
+            if (Test-Tool 'winget') {
+                Invoke-Native { winget install --id OpenJS.NodeJS.LTS --accept-source-agreements --accept-package-agreements --silent }
+            } else {
+                Install-ToolDirect 'node'
+            }
+            Update-PathFromEnvironment
+
+            $nodeVersion = Get-NodeVersionAt 'node'
+            if (-not $nodeVersion -or $nodeVersion -lt $MinNodeVersion) {
+                $newerNodeDir = Find-NewerNodeDir $MinNodeVersion
+                if ($newerNodeDir) {
+                    $env:Path = "$newerNodeDir;$env:Path"
+                } else {
+                    Write-Warn 'Instalei um Node novo, mas este terminal ainda nao enxerga ele. Feche este terminal, abra outro e rode o instalador de novo.'
+                    exit 0
+                }
+            }
+        }
     }
 
     $pinnedPnpm = Get-PinnedPnpmVersion $root
