@@ -18,7 +18,15 @@ const DISCORD_HOST = "discord.com";
 const TRACE_HOST = "cloudflare.com";
 const TRACE_PATH = "/cdn-cgi/trace";
 
+// gateway.discord.gg e remote-auth-gateway.discord.gg cobrem a conexao inicial, mas o resume
+// automatico (_handleClose -> _connect, quando a internet do usuario oscila) usa resumeUrl, um
+// host regional por shard (ex.: gateway-us-east1-c.discord.gg) que uma lista exata nunca cobre.
+// O padrao casa os dois hosts fixos e qualquer variante regional, sem casar o discord.gg puro
+// (dominio de convites, que nao deve ser roteado).
 const GATEWAY_HOSTS = ["gateway.discord.gg", "remote-auth-gateway.discord.gg"];
+// Fonte de texto, nao RegExp: e interpolada dentro do PAC script, que roda no Chromium, nao no
+// processo principal -- aqui ela nunca e avaliada como regex de verdade.
+const GATEWAY_HOST_PATTERN_SOURCE = "^(remote-auth-)?gateway(-[a-z0-9]+)*\\.discord\\.gg$";
 const LOGIN_HOSTS = ["discord.com", "canary.discord.com", "ptb.discord.com"];
 
 const MAX_LIST_BYTES = 1024 * 1024;
@@ -66,7 +74,12 @@ const POOL_SIZE = 5;
 const POOL_MAX_AGE_MS = 24 * 60 * 60 * 1000;
 
 const MAX_LOG_LINES = 200;
-const MAX_RETRIES = 2;
+
+// Orcamento que se renova, nao teto vitalicio: uma sessao longa com internet instavel nao pode
+// desistir de vez depois das duas primeiras quedas. A janela reabre sozinha; sucesso tambem
+// zera o contador na hora, via sessionWorked().
+const MAX_RETRIES_PER_WINDOW = 3;
+const RETRY_WINDOW_MS = 5 * 60_000;
 
 // Se estourar, o gateway sai direto: perde-se o Go Live daquela sessao, nunca o Discord.
 const STALL_BUDGET_MS = 12_000;
@@ -91,6 +104,8 @@ interface PoolEntry {
 const history: string[] = [];
 
 let retries = 0;
+let retryWindowStart = 0;
+let retryWindowTimer: ReturnType<typeof setTimeout> | null = null;
 
 function log(message: string) {
     const line = `${new Date().toISOString().slice(11, 19)} ${message}`;
@@ -727,30 +742,33 @@ async function serveRequest(client: Socket, request: Buffer | null) {
     client.pipe(upstream);
 }
 
-function pacScript(socksPort: number, routed: string[]) {
-    const list = routed.map(host => `"${host}"`).join(",");
+function pacScript(socksPort: number, loginHosts: string[]) {
+    const list = loginHosts.map(host => `"${host}"`).join(",");
 
     // O host roteado sai pelo roteador, sem alternativa: uma vez que o Chromium marca o SOCKS
     // como ruim ele passa a usar a alternativa do PAC sem avisar. A rede de seguranca real e
     // o proprio roteador caindo pra conexao direta, nao uma regra que o Chromium decide sozinho.
     // Quem nao esta na lista mantem a regra que o sistema ja usava (proxy corporativo/PAC).
-    return `var routed = [${list}];\n`
+    return `var gatewayPattern = /${GATEWAY_HOST_PATTERN_SOURCE}/;\n`
+        + `var loginHosts = [${list}];\n`
         + "function FindProxyForURL(url, host) {\n"
-        + "    for (var i = 0; i < routed.length; i++)\n"
-        + `        if (host === routed[i]) return "SOCKS5 127.0.0.1:${socksPort}";\n`
+        + `    if (gatewayPattern.test(host)) return "SOCKS5 127.0.0.1:${socksPort}";\n`
+        + "    for (var i = 0; i < loginHosts.length; i++)\n"
+        + `        if (host === loginHosts[i]) return "SOCKS5 127.0.0.1:${socksPort}";\n`
         + `    return "${fallbackRule}";\n`
         + "}\n";
 }
 
+// So para log/diagnostico -- o roteamento de verdade acontece pelo padrao dentro do pacScript.
 function routedHosts(): string[] {
     if (scope === "off") return [];
-    return scope === "login" ? [...GATEWAY_HOSTS, ...LOGIN_HOSTS] : [...GATEWAY_HOSTS];
+    return scope === "login" ? ["gateway*.discord.gg", ...LOGIN_HOSTS] : ["gateway*.discord.gg"];
 }
 
 // PAC embutido na propria URL, nao servido de um HTTP local: buscar o arquivo com a rede
 // ainda montando ja derrubou o processo principal em silencio numa build de Electron antiga.
 function pacDataUrl(socksPort: number) {
-    const script = pacScript(socksPort, routedHosts());
+    const script = pacScript(socksPort, scope === "login" ? LOGIN_HOSTS : []);
     return "data:application/x-ns-proxy-autoconfig;base64," + Buffer.from(script, "utf8").toString("base64");
 }
 
@@ -933,16 +951,80 @@ export function getLog(_: IpcMainInvokeEvent) {
     return history.join("\n");
 }
 
+function clearRetryWindowTimer() {
+    if (retryWindowTimer !== null) clearTimeout(retryWindowTimer);
+    retryWindowTimer = null;
+}
+
 export function sessionWorked(_: IpcMainInvokeEvent) {
     if (retries > 0) log(`sessao liberada depois de ${retries} tentativa(s)`);
     retries = 0;
+    retryWindowStart = 0;
+    clearRetryWindowTimer();
 }
 
-// O gateway pode nascer antes de existir saida escolhida; recarregar com a saida ja pronta
-// resolve, mas so ate MAX_RETRIES -- sem teto isso vira tela de carregamento infinita.
+// Script que roda dentro do renderer via executeJavaScript, no mesmo mundo global que o
+// DevTools usa (Vencord.* exposto em window). Fechar o socket bruto do gateway simula uma
+// queda de rede: dispara o "onclose" que o proprio Discord ja usa pra reconectar sozinho
+// (GatewayConnectionStore -> _handleClose -> _connect), sem reload de pagina. A call de voz
+// nao e afetada porque roda num RTCControlSocket separado. nextReconnectIsImmediate pula o
+// backoff exponencial que o Discord aplicaria numa queda de verdade.
+const SILENT_RECONNECT_SCRIPT = `(function () {
+    try {
+        var store = Vencord.Webpack.findStore("GatewayConnectionStore");
+        var sock = store && store.getSocket && store.getSocket();
+        if (!sock || !sock.webSocket || typeof sock.webSocket.close !== "function") return false;
+
+        sock.nextReconnectIsImmediate = true;
+        sock.webSocket.close();
+        return true;
+    } catch (error) {
+        return false;
+    }
+})()`;
+
+// Undocumented internal (GatewayConnectionStore.getSocket().webSocket): se o Discord renomear
+// isso numa atualizacao, o script devolve false ou executeJavaScript rejeita, e cai no reload
+// de sempre -- a recuperacao nunca trava, so perde a discricao.
+async function reconnectSession(event: IpcMainInvokeEvent): Promise<boolean> {
+    let silent = false;
+    try {
+        silent = await event.sender.executeJavaScript(SILENT_RECONNECT_SCRIPT);
+    } catch {
+        // executeJavaScript falhou (janela fechando, CSP, etc.) -- cai no reload abaixo
+    }
+
+    if (!silent) event.sender.reload();
+    return silent;
+}
+
+// O gateway pode nascer antes de existir saida escolhida; reconectar com a saida ja pronta
+// resolve. O orcamento se renova por janela de tempo (RETRY_WINDOW_MS), nao e vitalicio: uma
+// sessao longa com internet instavel continua sendo curada sozinha depois das primeiras quedas.
 export async function retryWithProxy(event: IpcMainInvokeEvent, excludedCountries: unknown) {
-    if (retries >= MAX_RETRIES) {
-        log(`o servidor continuou bloqueando apos ${retries} tentativas, desistindo`);
+    const now = Date.now();
+    if (now - retryWindowStart >= RETRY_WINDOW_MS) {
+        retries = 0;
+        retryWindowStart = now;
+        clearRetryWindowTimer();
+    }
+
+    if (retries >= MAX_RETRIES_PER_WINDOW) {
+        if (retryWindowTimer === null) {
+            const retryDelayMs = Math.max(0, retryWindowStart + RETRY_WINDOW_MS - now);
+            retryWindowTimer = setTimeout(() => {
+                retryWindowTimer = null;
+                if (event.sender.isDestroyed()) return;
+
+                // A sessao continua bloqueada, mas CONNECTION_OPEN nao volta a disparar enquanto o
+                // gateway fica conectado. Reentra no mesmo caminho para renovar o orcamento e
+                // forcar a proxima reconexao sem depender de reinicio manual.
+                void retryWithProxy(event, excludedCountries).catch(error => {
+                    log(`falhou ao retomar a tentativa automatica: ${error instanceof Error ? error.message : String(error)}`);
+                });
+            }, retryDelayMs);
+            log(`o servidor continuou bloqueando apos ${retries} tentativas nos ultimos ${Math.round(RETRY_WINDOW_MS / 60_000)} min; a proxima tentativa sera feita automaticamente quando a janela renovar`);
+        }
         return { retried: false as const, reason: "tentativas esgotadas" };
     }
 
@@ -990,11 +1072,13 @@ export async function retryWithProxy(event: IpcMainInvokeEvent, excludedCountrie
         return { retried: false as const, reason: "janela indisponivel" };
     }
 
-    log(`o servidor bloqueou esta sessao, recarregando atras de ${through} (tentativa ${attempt} de ${MAX_RETRIES})`);
+    log(`o servidor bloqueou esta sessao, tentativa ${attempt} atras de ${through}`);
 
     // event.sender e a janela do plugin -- a primeira janela criada e a tela de abertura, e
-    // recarregar ela nao recarrega o cliente.
-    event.sender.reload();
+    // recarregar (ou reconectar) ela nao afeta o cliente.
+    const silent = await reconnectSession(event);
+    log(silent ? "gateway reconectado sem reload" : "reconexao silenciosa indisponivel, recarregando a janela");
+
     return { retried: true as const, attempt };
 }
 
