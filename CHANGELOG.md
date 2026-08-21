@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.2.1](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.2.0...v1.2.1) (2026-08-21)
+
+
+### Bug Fixes
+
+* detectar Node antigo no PATH e usar instalacao mais nova sem exigir desinstalar ([5c05824](https://github.com/EduardoVasconceloss/StreamFix/commit/5c05824ef67e3480c330b45d945d767f22a15419))
+* instalador detecta Node antigo no PATH e usa versao compativel ([e282b4f](https://github.com/EduardoVasconceloss/StreamFix/commit/e282b4fab4ce55cf649bc7815785329f736ff4bd))
+
 ## [1.2.0](https://github.com/EduardoVasconceloss/StreamFix/compare/v1.1.1...v1.2.0) (2026-08-20)
 
 
